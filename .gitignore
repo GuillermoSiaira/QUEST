@@ -1,0 +1,55 @@
+# API Keys y secretos - NUNCA commitear
+*.txt
+.env
+.env.local
+.env.*
+!.env.example
+*.db
+quest.db
+node_modules/
+.next/
+secrets/
+*_api_key*
+*_secret*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+quantum_env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Go
+quest-avs-node/bin/
+quest-avs-node/vendor/
+*.exe
+
+# Node / Frontend
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
