@@ -1,11 +1,21 @@
 import type { EpochStatus } from "@/lib/types";
 import { RiskBadge } from "./RiskBadge";
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs text-zinc-500 uppercase tracking-wide">{label}</span>
-      <span className="text-sm font-mono font-medium text-zinc-900 dark:text-zinc-100">
+      <span
+        className={`text-sm font-mono font-medium text-zinc-900 dark:text-zinc-100 ${className ?? ""}`.trim()}
+      >
         {value}
       </span>
     </div>
@@ -14,14 +24,37 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 interface Props {
   epoch: EpochStatus;
+  snapshotAgeSeconds?: number | null;
 }
 
-export function EpochHeader({ epoch }: Props) {
-  const ts = new Date(epoch.timestamp).toLocaleTimeString([], {
+export function EpochHeader({ epoch, snapshotAgeSeconds }: Props) {
+  const hasTimezone = /Z|[+-]\d{2}:\d{2}$/.test(epoch.timestamp);
+  const epochDate = new Date(hasTimezone ? epoch.timestamp : `${epoch.timestamp}Z`);
+  const ts = epochDate.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone: "UTC",
   });
+
+  const ageDisplay = (() => {
+    if (snapshotAgeSeconds === null || snapshotAgeSeconds === undefined) return "—";
+    const hours = Math.floor(snapshotAgeSeconds / 3600);
+    const minutes = Math.floor((snapshotAgeSeconds % 3600) / 60);
+    const seconds = snapshotAgeSeconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  })();
+
+  const pollIntervalSeconds = Number(
+    process.env.NEXT_PUBLIC_POLL_INTERVAL_SECONDS ?? 60
+  );
+  const isStale =
+    snapshotAgeSeconds !== null &&
+    snapshotAgeSeconds !== undefined &&
+    snapshotAgeSeconds > pollIntervalSeconds * 2;
+  const staleClass = isStale ? "text-amber-600 dark:text-amber-400" : "";
 
   const score = epoch.risk.grey_zone_score;
   const scoreDisplay =
@@ -56,6 +89,11 @@ export function EpochHeader({ epoch }: Props) {
           <Stat
             label="Grey Zone Score"
             value={scoreDisplay}
+          />
+          <Stat
+            label="Last update"
+            value={ageDisplay}
+            className={staleClass}
           />
           <Stat
             label="Lido TVL"

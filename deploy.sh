@@ -3,7 +3,9 @@ set -euo pipefail
 
 PROJECT_ID="quest-493015"
 REGION="us-central1"
+ACCOUNT="guillermosiaira@gmail.com"
 
+gcloud config set account "${ACCOUNT}"
 gcloud config set project "${PROJECT_ID}"
 SERVICE_NAME="quest-api"
 IMAGE="gcr.io/${PROJECT_ID}/quest-api"

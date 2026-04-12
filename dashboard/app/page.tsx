@@ -29,7 +29,14 @@ function ConnectionDot({ status }: { status: string }) {
 }
 
 export default function Dashboard() {
-  const { latest, history, status, lastAlert } = useQuestFeed();
+  const {
+    latest,
+    history,
+    status,
+    lastAlert,
+    secondsToRefresh,
+    snapshotAgeSeconds,
+  } = useQuestFeed();
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
@@ -97,8 +104,8 @@ export default function Dashboard() {
         {/* Main content — only when we have data */}
         {latest && (
           <>
-            <EpochHeader epoch={latest} />
-            <EpochInterpretation epoch={latest} />
+            <EpochHeader epoch={latest} snapshotAgeSeconds={snapshotAgeSeconds} />
+            <EpochInterpretation epoch={latest} secondsToRefresh={secondsToRefresh} />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <RiskTable epoch={latest} />

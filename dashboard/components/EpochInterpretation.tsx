@@ -5,13 +5,16 @@ import type { EpochStatus } from "@/lib/types";
 
 interface Props {
   epoch: EpochStatus;
+  secondsToRefresh?: number | null;
 }
 
-export function EpochInterpretation({ epoch }: Props) {
+export function EpochInterpretation({ epoch, secondsToRefresh }: Props) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [timestamp, setTimestamp] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastEpochRef = useRef<number | null>(null);
+  const hasTimestampRef = useRef(false);
 
   useEffect(() => {
     // Only re-fetch when epoch number changes
@@ -25,6 +28,8 @@ export function EpochInterpretation({ epoch }: Props) {
 
     setText("");
     setLoading(true);
+    setTimestamp(null);
+    hasTimestampRef.current = false;
 
     (async () => {
       try {
@@ -49,6 +54,18 @@ export function EpochInterpretation({ epoch }: Props) {
           const { done, value } = await reader.read();
           if (done) break;
           accumulated += decoder.decode(value, { stream: true });
+          if (!hasTimestampRef.current) {
+            hasTimestampRef.current = true;
+            setTimestamp(
+              new Date().toLocaleString(undefined, {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            );
+          }
           setText(accumulated);
         }
       } catch (err: unknown) {
@@ -66,6 +83,13 @@ export function EpochInterpretation({ epoch }: Props) {
     };
   }, [epoch]);
 
+  const formattedCountdown = (() => {
+    if (secondsToRefresh === null || secondsToRefresh === undefined) return null;
+    const minutes = Math.floor(secondsToRefresh / 60);
+    const seconds = secondsToRefresh % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  })();
+
   const borderColor =
     epoch.risk.risk_level === "CRITICAL"
       ? "border-red-300 dark:border-red-800"
@@ -77,13 +101,23 @@ export function EpochInterpretation({ epoch }: Props) {
     <div
       className={`rounded-xl border ${borderColor} bg-white dark:bg-zinc-900 shadow-sm px-5 py-4`}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
-          QUEST Analysis
-        </span>
-        {loading && (
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
-        )}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+            QUEST Analysis
+          </span>
+          {loading && (
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400 animate-pulse" />
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+          {timestamp && <span>{timestamp}</span>}
+          {formattedCountdown && (
+            <span>
+              Next update in {formattedCountdown}
+            </span>
+          )}
+        </div>
       </div>
       <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300 min-h-[2.5rem]"
          dangerouslySetInnerHTML={{

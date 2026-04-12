@@ -12,7 +12,7 @@ El snapshot alimenta lrt_risk_model y la API.
 import os
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
 
@@ -33,6 +33,7 @@ ALCHEMY_WS_URL        = os.getenv("ALCHEMY_WS_URL")
 BEACONCHAIN_API_KEY   = os.getenv("BEACONCHAIN_API_KEY")
 BEACONCHAIN_BASE_URL  = os.getenv("BEACONCHAIN_BASE_URL", "https://beaconcha.in/api/v1")
 POLL_INTERVAL         = int(os.getenv("QUEST_POLL_INTERVAL_SECONDS", 60))
+HTTP_TIMEOUT_SECONDS = int(os.getenv("QUEST_HTTP_TIMEOUT_SECONDS", 20))
 
 # Lido stETH contract (Mainnet)
 LIDO_STETH_ADDRESS = "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"
@@ -125,14 +126,19 @@ class BeaconchainClient:
         for attempt in range(3):
             async with session.get(url, headers=self.headers) as resp:
                 if resp.status == 429:
-                    wait = 10 * (attempt + 1)
-                    logger.warning("Beaconcha.in rate limit en epoch/%s — esperando %ds", epoch, wait)
+                    wait = 30 * (attempt + 1)  # 30s, 60s, 90s
+                    logger.warning(
+                        "Beaconcha.in rate limit en epoch/%s — esperando %ds (intento %d/3)",
+                        epoch, wait, attempt + 1,
+                    )
                     await asyncio.sleep(wait)
                     continue
                 resp.raise_for_status()
                 data = await resp.json()
                 return data.get("data", {})
-        raise RuntimeError(f"Beaconcha.in devolvio 429 despues de 3 intentos para epoch/{epoch}")
+        # Todos los intentos fallaron: devolver {} para que el pipeline continue
+        logger.error("Beaconcha.in 429 persistente en epoch/%s — saltando ciclo", epoch)
+        return {}
 
     async def get_epoch_slashings(self, session: aiohttp.ClientSession, epoch: int) -> list:
         """Lista de slashings en un epoch especifico."""
@@ -155,7 +161,7 @@ class AlchemyClient:
     """Cliente para Alchemy (Execution Layer via web3.py)."""
 
     def __init__(self, http_url: str):
-        self.w3 = Web3(Web3.HTTPProvider(http_url))
+        self.w3 = Web3(Web3.HTTPProvider(http_url, request_kwargs={"timeout": HTTP_TIMEOUT_SECONDS}))
         if not self.w3.is_connected():
             raise ConnectionError(f"No se pudo conectar a Alchemy: {http_url}")
         logger.info("Alchemy conectado. Bloque actual: %d", self.w3.eth.block_number)
@@ -217,6 +223,9 @@ class QUESTDataPipeline:
             raise ValueError("BEACONCHAIN_API_KEY no configurado. Revisar .env")
 
         self.alchemy   = AlchemyClient(ALCHEMY_HTTP_URL)
+        # Participation rate cambia muy lentamente — se cachea 15 polls (~30 min)
+        self._last_known_participation: float = 0.9521  # baseline mainnet tipico
+        self._participation_refresh_counter: int = 0
         self.beacon    = BeaconchainClient(BEACONCHAIN_API_KEY, BEACONCHAIN_BASE_URL)
         self._snapshots: list[EpochSnapshot] = []
         self._callbacks = []
@@ -229,8 +238,10 @@ class QUESTDataPipeline:
         try:
             # --- Consensus Layer ---
             current = await self.beacon.get_epoch(session, "latest")
+            if not current:
+                return None  # rate limit persistente — reintentar en el proximo ciclo
             epoch_number = int(current.get("epoch", 0))
-            await asyncio.sleep(1)  # pausa entre requests para respetar rate limit
+            await asyncio.sleep(2)  # pausa entre requests para respetar rate limit
 
             # Rewards reales = delta de balance entre epoch actual y anterior.
             # totalvalidatorbalance incluye el balance acumulado de todos los
@@ -238,23 +249,21 @@ class QUESTDataPipeline:
             # distribuido en ese epoch (ajustado por entradas/salidas de validadores).
             current_total_balance  = int(current.get("totalvalidatorbalance", 0))
             epoch_rewards_gwei     = None
+            previous_epoch_data: dict = {}
 
             if epoch_number > 0:
                 try:
-                    previous = await self.beacon.get_epoch(session, epoch_number - 1)
-                    previous_total_balance = int(previous.get("totalvalidatorbalance", 0))
-                    prev_validators        = int(previous.get("validatorscount", 0))
+                    previous_epoch_data = await self.beacon.get_epoch(session, epoch_number - 1)
+                    previous_total_balance = int(previous_epoch_data.get("totalvalidatorbalance", 0))
+                    prev_validators        = int(previous_epoch_data.get("validatorscount", 0))
                     curr_validators        = int(current.get("validatorscount", 0))
 
-                    # Ajuste por nuevos validadores: cada nuevo validador entra
-                    # con 32 ETH (MIN_ACTIVATION_BALANCE) que no son rewards.
                     new_validators         = max(0, curr_validators - prev_validators)
-                    new_validator_balance  = new_validators * 32 * 10**9  # en Gwei
+                    new_validator_balance  = new_validators * 32 * 10**9
 
                     raw_delta              = current_total_balance - previous_total_balance
                     epoch_rewards_gwei     = raw_delta - new_validator_balance
 
-                    # Sanidad: rewards negativos extremos indican dato corrupto
                     if epoch_rewards_gwei < -(10**12):
                         logger.warning(
                             "epoch_rewards_gwei=%d fuera de rango — usando None",
@@ -265,16 +274,28 @@ class QUESTDataPipeline:
                 except Exception as e:
                     logger.warning("No se pudo obtener epoch anterior: %s", e)
 
-            await asyncio.sleep(1)  # pausa antes de pedir slashings
-            # Slashings del epoch actual
-            slashings          = await self.beacon.get_epoch_slashings(session, epoch_number)
-            slashed_count      = len(slashings)
-            # Penalizacion inicial: 1/32 de 32 ETH = 1 ETH por validador slasheado
+            await asyncio.sleep(1)
+            slashings             = await self.beacon.get_epoch_slashings(session, epoch_number)
+            slashed_count         = len(slashings)
             slashing_penalty_gwei = slashed_count * (32 * 10**9 // 32)
 
             total_validators          = int(current.get("validatorscount", 0))
             total_active_balance_gwei = int(current.get("eligibleether", 0))
-            participation_rate        = float(current.get("globalparticipationrate", 0.0))
+
+            # Participation rate: se refresca desde Beaconcha.in cada 15 polls (~30 min).
+            # Entre refrescos usa el valor cacheado para no quemar rate limit.
+            self._participation_refresh_counter += 1
+            if self._participation_refresh_counter >= 15:
+                self._participation_refresh_counter = 0
+                try:
+                    finalized = await self.beacon.get_epoch(session, epoch_number - 2)
+                    val = float(finalized.get("globalparticipationrate", 0.0))
+                    if val > 0:
+                        self._last_known_participation = val
+                        logger.info("Participation rate actualizada: %.4f", val)
+                except Exception as e:
+                    logger.warning("No se pudo actualizar participation rate: %s", e)
+            participation_rate = self._last_known_participation
 
             # --- Execution Layer ---
             block          = self.alchemy.get_latest_block()
@@ -302,7 +323,7 @@ class QUESTDataPipeline:
 
             snapshot = EpochSnapshot(
                 epoch                    = epoch_number,
-                timestamp                = datetime.utcnow(),
+                timestamp                = datetime.now(timezone.utc),
                 total_validators         = total_validators,
                 total_active_balance_gwei= total_active_balance_gwei,
                 slashed_validators       = slashed_count,
@@ -336,7 +357,8 @@ class QUESTDataPipeline:
         logger.info("  Beaconcha.in: %s", BEACONCHAIN_BASE_URL)
         logger.info("  Poll interval: %ds", POLL_INTERVAL)
 
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             while True:
                 snapshot = await self._fetch_epoch_snapshot(session)
                 if snapshot:
