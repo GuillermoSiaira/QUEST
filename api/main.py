@@ -172,11 +172,12 @@ async def health():
     return {"status": "ok", "snapshots": len(snapshot_history)}
 
 
-@app.get("/api/status", response_model=EpochStatus)
+@app.get("/api/status")
 async def get_status():
     """Ultimo EpochStatus disponible."""
     if not snapshot_history:
-        return {"error": "Sin datos aun — pipeline iniciando"}
+        from fastapi import Response
+        return Response(status_code=204)
     return snapshot_history[-1]
 
 
