@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { EpochStatus } from "@/lib/types";
 
 const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_KEY ?? process.env.ANTHROPIC_API_KEY,
 });
 
 const SYSTEM_PROMPT = `You are QUEST, a macroprudential risk analyst for the Ethereum ecosystem.
