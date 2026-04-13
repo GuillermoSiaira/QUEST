@@ -37,19 +37,26 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 
 ## Estado Actual del Repositorio
 
-**Repo local:** `D:\projects\lido-oracle-7.0.0-beta.3`
+### Código en producción (GCP Cloud Run):
+| Servicio | URL | Estado |
+|---|---|---|
+| `quest-api` | https://quest-api-299259685359.us-central1.run.app | ✅ Running |
+| `quest-risk-engine` | https://quest-risk-engine-299259685359.us-central1.run.app | ✅ Running (gRPC, privado) |
 
-### Código existente (propio):
+### Módulos del risk-engine:
 | Archivo | Descripción |
 |---|---|
-| `quantum_exploit.py` | PoC: optimización cuadrática con Qiskit. Mapea estado del protocolo a Hamiltoniano de Ising para encontrar vectores de insolvencia. Calcula QSR. |
-| `lrt_risk_model.py` | Modelo de riesgo cuadrático (en `quantum_env`) |
+| `risk-engine/data_pipeline.py` | Ingesta Beacon REST API + Alchemy → EpochSnapshot |
+| `risk-engine/lrt_risk_model.py` | Grey Zone Score desde EpochSnapshot (Python puro) |
+| `risk-engine/consensus_constants.py` | Constantes del consensus spec de Ethereum |
+| `risk-engine/grpc_server.py` | Servidor gRPC: SystemicRiskOracle.CalculateGreyZoneScore |
+| `risk-engine/quest.proto` | Contrato gRPC (proto3) |
 | `test/TheSmartExit.t.sol` | PoC en Solidity (Foundry): demuestra el vector de arbitraje en Lido |
 
 ### Entornos configurados:
-- **Python:** `quantum_env` con Qiskit
+- **Python:** dependencias en `risk-engine/requirements.txt` (sin Qiskit en producción)
 - **Foundry:** Configurado con fork de Mainnet (Alchemy Premium)
-- **Lido oracle v7.0.0-beta.3:** Código fuente de referencia para análisis (NO modificar)
+- **Lido oracle v7.0.0-beta.3:** Código fuente de referencia para análisis (NO modificar, en repo separado)
 
 ---
 
@@ -60,11 +67,16 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 - Actúa como coeficiente de fricción económica para estabilizar el sistema bajo riesgo.
 - **Vector:** `Θ_k = (θ^gas, θ^lat, θ^risk, θ^finality, θ^incentives)`
 - **Derivada de:** Densidad Temporal del Epoch `D_k = f(MEV, liquidez, slashings, participación, congestión)`
-- **Cálculo:** Resolver el Hamiltoniano de solvencia via Qiskit → emitir QSR → derivar θ
+- **Cálculo:** Grey Zone Score (Python puro, consensus spec) → emitir señal → derivar θ
+- **Nota:** La optimización cuadrática con Qiskit es una línea de investigación futura,
+  no una dependencia de producción. En producción se usa aritmética del consensus spec.
 
-### QSR — Quantum Solvency Ratio
-Ratio que expresa la "superposición de estados" (rentabilidad aparente vs. deuda oculta)
-que la lógica plana de la EVM ignora. Calculado off-chain con optimización cuadrática.
+### Grey Zone Score (ex-QSR)
+`gross_slashing_loss / (cl_rewards + burned_eth)`
+
+Ratio que expresa la deuda oculta de slashings enmascarada por rewards positivos —
+el escenario exacto que `safe_border.py` de Lido no detecta. Calculado off-chain
+en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 
 ### ERC-8033 — Oráculo de Estabilidad
 - Publica métricas agregadas on-chain: QSR, señal θ, densidad `D_k`
@@ -129,18 +141,27 @@ que la lógica plana de la EVM ignora. Calculado off-chain con optimización cua
 
 ## Hoja de Ruta Inmediata (Próximos pasos)
 
-### Fase 1 — Limpieza y Estandarización (Ahora)
-- [ ] Refactorizar `QUESTCore.sol`: funciones `reportEpochMetrics(...)`, `publishPMC(θ)`, `updateAgentReputation(...)`
-- [ ] Crear interfaz `IERC8004QuestAware`
-- [ ] Modularizar `lrt_risk_model.py` como microservicio funcional
+### Fase 1 — Risk Engine (COMPLETADA)
+- [x] `data_pipeline.py`: ingesta Beacon REST API (ChainSafe Lodestar) + Alchemy
+- [x] `lrt_risk_model.py`: Grey Zone Score (Python puro, consensus spec)
+- [x] `quest.proto` + `grpc_server.py`: servicio gRPC SystemicRiskOracle
+- [x] Deploy en GCP Cloud Run (`quest-api` + `quest-risk-engine`)
+- [x] Dashboard público en Vercel
 
-### Fase 2 — Testnet (Sepolia)
-- [ ] Desplegar QUESTCore.sol en Sepolia
-- [ ] Conectar oracle node Python → contrato
+### Fase 2 — Contratos Base (Holesky)
+- [ ] Refactorizar `QUESTCore.sol`: `reportEpochMetrics(...)`, `publishGreyZoneScore(θ)`, `updateAgentReputation(...)`
+- [ ] Implementar `IERC8004QuestAware`
+- [ ] Desplegar en Holesky con Foundry
 
-### Fase 3 — AVS / Whitepaper
-- [ ] Diseño del AVS en EigenLayer
-- [ ] Redactar EIP/Whitepaper final integrando concepto AVS + Economía de Agentes
+### Fase 3 — AVS (EigenLayer)
+- [ ] `avs create` con DevKit en `quest-avs-node/` (Go)
+- [ ] Bridge Go ↔ Python via gRPC (cliente → `quest-risk-engine`)
+- [ ] Desplegar en Holesky EigenLayer
+
+### Fase 4 — Grants
+- [ ] Ethereum Foundation ESP
+- [ ] EigenLayer Foundation
+- [ ] Lido Grants Program
 
 ---
 

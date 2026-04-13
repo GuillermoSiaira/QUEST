@@ -19,18 +19,20 @@ Thresholds:
 
 ## Architecture
 ```
-Beaconcha.in + Alchemy
-  -> risk-engine/data_pipeline.py
-  -> FastAPI (Cloud Run)
-  -> WebSocket
+Ethereum Beacon REST API (ChainSafe Lodestar) + Alchemy
+  -> risk-engine/data_pipeline.py   (ingesta + EpochSnapshot)
+  -> risk-engine/lrt_risk_model.py  (Grey Zone Score)
+  -> risk-engine/grpc_server.py     (gRPC — SystemicRiskOracle)
+  -> FastAPI (Cloud Run)            (REST + WebSocket)
   -> Next.js Dashboard (Vercel)
 ```
 
 ## Stack
-- **Backend:** Python 3.13, FastAPI, aiohttp, web3.py, aiosqlite
+- **Backend:** Python 3.11, FastAPI, aiohttp, web3.py, aiosqlite, grpcio
 - **Frontend:** Next.js 16, TypeScript, Tailwind CSS, Recharts
 - **Infrastructure:** GCP Cloud Run, GCP Secret Manager, Vercel
-- **Data sources:** Beaconcha.in API (Consensus Layer), Alchemy (Execution Layer)
+- **Data sources:** Ethereum Beacon REST API — lodestar-mainnet.chainsafe.io (Consensus Layer), Alchemy (Execution Layer)
+- **gRPC service:** `risk-engine/quest.proto` — `SystemicRiskOracle.CalculateGreyZoneScore`
 
 ## Local Development
 ```
