@@ -1,4 +1,4 @@
-# QUEST Contracts — Spec para Fase 2 (Holesky)
+# QUEST Contracts — Spec para Fase 2 (Sepolia)
 
 > Instrucción para Codex: Implementa exactamente lo que dice este spec. No agregues
 > upgradeability, proxies, ni dependencias de OpenZeppelin. No inventes funciones extra.
@@ -27,7 +27,7 @@ El off-chain calcula:
 | `contracts/interfaces/IERC8004QuestAware.sol` | Modificar: actualizar firmas para usar `greyZoneScore` |
 | `contracts/QUESTCore.sol` | Modificar: refactor completo según spec |
 | `test/QUESTCore.t.sol` | Crear: tests Foundry |
-| `script/Deploy.s.sol` | Crear: deploy script para Holesky |
+| `script/Deploy.s.sol` | Crear: deploy script para Sepolia |
 | `foundry.toml` | Crear: config Foundry |
 
 ---

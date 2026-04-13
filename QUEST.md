@@ -65,8 +65,8 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 | `contracts/interfaces/IERC8033.sol` | Interfaz del oráculo macroprudencial |
 | `contracts/interfaces/IERC8004QuestAware.sol` | Interfaz para agentes QUEST-aware |
 | `test/QUESTCore.t.sol` | Tests Foundry (10 casos) |
-| `script/Deploy.s.sol` | Deploy script para Holesky |
-| `foundry.toml` | Config Foundry (Holesky + Mainnet fork) |
+| `script/Deploy.s.sol` | Deploy script para Sepolia |
+| `foundry.toml` | Config Foundry (Sepolia + Mainnet fork) |
 | `contracts/SPEC.md` | Especificación de contratos (referencia) |
 
 ### Entornos configurados:
@@ -164,18 +164,18 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 - [x] Deploy en GCP Cloud Run (`quest-api` + `quest-risk-engine`)
 - [x] Dashboard público en Vercel
 
-### Fase 2 — Contratos Base (Holesky)
+### Fase 2 — Contratos Base (Sepolia)
 - [x] Refactorizar `QUESTCore.sol`: `reportEpochMetrics(...)`, `publishGreyZoneScore(θ)`, `updateAgentReputation(...)`
 - [x] Implementar `IERC8004QuestAware` + `IERC8033` con terminología Grey Zone Score
 - [x] Tests Foundry (`test/QUESTCore.t.sol`) — 10 casos cubriendo happy path + access control
-- [x] Deploy script (`script/Deploy.s.sol`) + `foundry.toml` para Holesky
+- [x] Deploy script (`script/Deploy.s.sol`) + `foundry.toml` para Sepolia
 - [ ] `forge install` (forge-std) + `forge test` en verde
-- [ ] Desplegar en Holesky: `forge script Deploy --rpc-url holesky --broadcast --verify`
+- [ ] Desplegar en Sepolia: `forge script Deploy --rpc-url holesky --broadcast --verify`
 
 ### Fase 3 — AVS (EigenLayer)
 - [ ] `avs create` con DevKit en `quest-avs-node/` (Go)
 - [ ] Bridge Go ↔ Python via gRPC (cliente → `quest-risk-engine`)
-- [ ] Desplegar en Holesky EigenLayer
+- [ ] Desplegar en Sepolia EigenLayer
 
 ### Fase 4 — Grants
 - [ ] Ethereum Foundation ESP

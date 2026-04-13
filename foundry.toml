@@ -7,8 +7,8 @@ libs    = ["lib"]
 solc    = "0.8.24"
 
 [rpc_endpoints]
-holesky = "${HOLESKY_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
 mainnet = "${ALCHEMY_RPC_URL}"
 
 [etherscan]
-holesky = { key = "${ETHERSCAN_API_KEY}", url = "https://api-holesky.etherscan.io/api" }
+sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api-sepolia.etherscan.io/api" }
