@@ -1,6 +1,7 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /build
-COPY go.mod go.sum ./
+COPY go.mod ./
+# go.sum se genera en el primer build — no requerido localmente
 RUN go mod download
 COPY . .
 RUN go build -o quest-avs-node .
