@@ -1,10 +1,8 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /build
-COPY go.mod ./
-# go.sum se genera en el primer build — no requerido localmente
-RUN go mod download
 COPY . .
-RUN go build -o quest-avs-node .
+# go mod tidy genera go.sum y descarga dependencias en un solo paso
+RUN go mod tidy && go build -o quest-avs-node .
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
