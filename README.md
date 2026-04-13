@@ -33,7 +33,7 @@ Ethereum Beacon REST API (ChainSafe Lodestar) + Alchemy
 - **Infrastructure:** GCP Cloud Run, GCP Firestore, GCP Secret Manager, Vercel
 - **Data sources:** Ethereum Beacon REST API — lodestar-mainnet.chainsafe.io (Consensus Layer), Alchemy (Execution Layer)
 - **gRPC service:** `risk-engine/quest.proto` — `SystemicRiskOracle.CalculateGreyZoneScore`
-- **Contracts:** Solidity 0.8.24, Foundry — `QUESTCore.sol` (Holesky, pending deploy)
+- **Contracts:** Solidity 0.8.24, Foundry — `QUESTCore` deployed on Sepolia `0xE81C6B16ecbEC8E4Aadc963e82B27c10c4ab10e7`
 
 ## Local Development
 ```

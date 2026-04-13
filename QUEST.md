@@ -43,6 +43,13 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 | `quest-api` | https://quest-api-299259685359.us-central1.run.app | ✅ Running |
 | `quest-risk-engine` | https://quest-risk-engine-299259685359.us-central1.run.app | ✅ Running (gRPC, privado) |
 
+### Contratos desplegados:
+| Contrato | Red | Address | Tx |
+|---|---|---|---|
+| `QUESTCore` | Sepolia | `0xE81C6B16ecbEC8E4Aadc963e82B27c10c4ab10e7` | `0x48ebe0a7...e8ded2` |
+
+Operator: `0xBb3272F387dE5A2c2e3906d24EfaC460a7013f2C`
+
 ### Persistencia:
 - **Firestore** (GCP `quest-493015`, colección `epoch_snapshots`, free tier)
 - Persistente entre reinicios y redeploys — historial acumulativo
@@ -169,8 +176,8 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 - [x] Implementar `IERC8004QuestAware` + `IERC8033` con terminología Grey Zone Score
 - [x] Tests Foundry (`test/QUESTCore.t.sol`) — 10 casos cubriendo happy path + access control
 - [x] Deploy script (`script/Deploy.s.sol`) + `foundry.toml` para Sepolia
-- [ ] `forge install` (forge-std) + `forge test` en verde
-- [ ] Desplegar en Sepolia: `forge script Deploy --rpc-url holesky --broadcast --verify`
+- [x] `forge install` (forge-std v1.15.0) + `forge test` 10/10 en verde
+- [x] Desplegar en Sepolia — bloque 10648557, gas: 1,148,831
 
 ### Fase 3 — AVS (EigenLayer)
 - [ ] `avs create` con DevKit en `quest-avs-node/` (Go)
