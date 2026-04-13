@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -f
+      - risk-engine/Dockerfile
+      - -t
+      - gcr.io/quest-493015/quest-risk-engine:latest
+      - .
+images:
+  - gcr.io/quest-493015/quest-risk-engine:latest

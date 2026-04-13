@@ -3,10 +3,16 @@ QUEST Data Pipeline
 ===================
 Ingesta de datos en tiempo real desde:
 - Alchemy (Execution Layer): bloques, gas, ETH quemado (EIP-1559)
-- Beaconcha.in (Consensus Layer): epochs, slashings, rewards
+- Ethereum Beacon REST API (Consensus Layer): epochs, slashings, balances
 
-Produce EpochSnapshot cada ciclo de polling (default: 12s).
-El snapshot alimenta lrt_risk_model y la API.
+Reemplaza el cliente Beaconcha.in (custom API con rate limit agresivo)
+por el estandar Ethereum Beacon REST API — sin API key, sin bloqueos por IP.
+
+Proveedor por defecto: lodestar-mainnet.chainsafe.io (ChainSafe, gratuito).
+Configurable via env var BEACON_API_URL.
+
+Produce EpochSnapshot cada ciclo de polling (default: 60s).
+El snapshot alimenta lrt_risk_model y la API REST/WebSocket.
 """
 
 import os
@@ -28,21 +34,23 @@ logger = logging.getLogger("quest.pipeline")
 # ---------------------------------------------------------------------------
 # Config desde .env
 # ---------------------------------------------------------------------------
-ALCHEMY_HTTP_URL      = os.getenv("ALCHEMY_HTTP_URL")
-ALCHEMY_WS_URL        = os.getenv("ALCHEMY_WS_URL")
-BEACONCHAIN_API_KEY   = os.getenv("BEACONCHAIN_API_KEY")
-BEACONCHAIN_BASE_URL  = os.getenv("BEACONCHAIN_BASE_URL", "https://beaconcha.in/api/v1")
-POLL_INTERVAL         = int(os.getenv("QUEST_POLL_INTERVAL_SECONDS", 60))
-HTTP_TIMEOUT_SECONDS = int(os.getenv("QUEST_HTTP_TIMEOUT_SECONDS", 20))
+ALCHEMY_HTTP_URL     = os.getenv("ALCHEMY_HTTP_URL")
+ALCHEMY_WS_URL       = os.getenv("ALCHEMY_WS_URL")
+BEACON_API_URL       = os.getenv("BEACON_API_URL", "https://lodestar-mainnet.chainsafe.io")
+POLL_INTERVAL        = int(os.getenv("QUEST_POLL_INTERVAL_SECONDS", 60))
+HTTP_TIMEOUT_SECONDS = int(os.getenv("QUEST_HTTP_TIMEOUT_SECONDS", 30))
 
 # Lido stETH contract (Mainnet)
 LIDO_STETH_ADDRESS = "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"
+SLOTS_PER_EPOCH    = 32
 
-SLOTS_PER_EPOCH = 32
+# Baseline mainnet (fallback si los requests de stats fallan en el primer ciclo)
+_BASELINE_VALIDATOR_COUNT    = 1_050_000
+_BASELINE_ELIGIBLE_ETH_GWEI  = int(33.6e6 * 1e9)   # ~33.6 M ETH
 
 
 # ---------------------------------------------------------------------------
-# EpochSnapshot — fuente de verdad para API y lrt_risk_model
+# EpochSnapshot
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -50,118 +58,228 @@ class EpochSnapshot:
     """
     Estado consolidado de un epoch.
 
-    Campos de Consensus Layer (Beaconcha.in):
+    Consensus Layer (Beacon REST API):
       epoch                    numero de epoch
       timestamp                momento de captura UTC
-      total_validators         total de validadores en la red
-      total_active_balance_gwei stake elegible total en Gwei (eligibleether)
+      total_validators         total de validadores activos (active_ongoing)
+      total_active_balance_gwei stake elegible total en Gwei (sum effective_balance)
       slashed_validators       cantidad de slashings en este epoch
       slashing_penalty_gwei    penalizacion inicial estimada en Gwei
-      epoch_rewards_gwei       rewards reales del epoch = delta de balance
-                               entre epoch actual y anterior (Gwei)
-                               None si es el primer snapshot (sin epoch previo)
+      epoch_rewards_gwei       delta de balance entre epoch actual y anterior (Gwei)
+                               None en el primer ciclo (sin baseline previo)
       participation_rate       tasa de participacion global (0.0 - 1.0)
+                               valor cacheado — mainnet tipico: ~0.95
 
-    Campos de Execution Layer (Alchemy):
+    Execution Layer (Alchemy):
       block_number             ultimo bloque capturado
       avg_gas_price_gwei       precio de gas promedio en Gwei
       burned_eth_gwei          ETH quemado por EIP-1559 en el bloque
-                               (base_fee * gas_used). Proxy de actividad
-                               economica, NO es MEV directo.
+                               (base_fee * gas_used). Proxy de actividad economica.
       lido_tvl_eth             ETH total stakeado en Lido (getTotalPooledEther)
 
-    Campos calculados:
+    Calculados:
       net_rebase_gwei          epoch_rewards_gwei - slashing_penalty_gwei
-                               None si epoch_rewards_gwei es None
       is_grey_zone             True si net_rebase > 0 Y hay slashings activos
-                               (escenario del bypass de safe_border.py)
     """
     epoch: int
     timestamp: datetime
 
-    # Consensus Layer
     total_validators: int
-    total_active_balance_gwei: int     # eligibleether de Beaconchain (en Gwei)
+    total_active_balance_gwei: int
     slashed_validators: int
     slashing_penalty_gwei: int
-    epoch_rewards_gwei: Optional[int]  # None en el primer ciclo
+    epoch_rewards_gwei: Optional[int]
     participation_rate: float
 
-    # Execution Layer
     block_number: int
     avg_gas_price_gwei: float
-    burned_eth_gwei: int               # base_fee * gas_used — NO es MEV
+    burned_eth_gwei: int
     lido_tvl_eth: float
 
-    # Calculados
     net_rebase_gwei: Optional[int]
     is_grey_zone: bool
 
 
 # ---------------------------------------------------------------------------
-# Cliente Beaconcha.in
+# Beacon REST API Client
 # ---------------------------------------------------------------------------
 
-class BeaconchainClient:
-    """Cliente para la API REST de Beaconcha.in."""
+class BeaconAPIClient:
+    """
+    Cliente para el estandar Ethereum Beacon REST API. Sin API key.
+    Compatible con cualquier nodo spec-compliant (Lighthouse, Lodestar, Teku...).
 
-    def __init__(self, api_key: str, base_url: str):
-        self.api_key  = api_key
-        self.base_url = base_url
-        self.headers  = {"apikey": api_key}
+    Endpoints:
+      GET /eth/v1/beacon/headers/head                         epoch actual (1 KB)
+      GET /eth/v1/beacon/states/{slot}/validator_balances     total balance (~10-15 MB, cacheado)
+      GET /eth/v1/beacon/states/{slot}/validators?status=...  stats (~50 MB, cacheado 50 epochs)
+      GET /eth/v2/beacon/blocks/{slot}                        slashings por bloque (~5 KB)
 
-    async def get_epoch(self, session: aiohttp.ClientSession, epoch: int | str = "latest") -> dict:
-        """
-        Obtiene datos de un epoch.
-        epoch='latest' para el epoch actual, o un numero entero.
+    Cache:
+      _balance_cache[epoch]    total_balance_gwei (descartado a los 5 epochs)
+      _stats_cache             count + eligible_balance (refresco cada 50 epochs, ~5.3 hs)
+      _slashings_cache[epoch]  slashings count (escaneo unico por epoch)
+    """
 
-        Campos relevantes del response:
-          epoch                  numero de epoch
-          validatorscount        total de validadores
-          eligibleether          stake elegible total en Gwei
-          totalvalidatorbalance  balance total de todos los validadores en Gwei
-          globalparticipationrate tasa de participacion (0.0-1.0)
-        """
-        url = f"{self.base_url}/epoch/{epoch}"
-        for attempt in range(3):
-            async with session.get(url, headers=self.headers) as resp:
-                if resp.status == 429:
-                    wait = 30 * (attempt + 1)  # 30s, 60s, 90s
-                    logger.warning(
-                        "Beaconcha.in rate limit en epoch/%s — esperando %ds (intento %d/3)",
-                        epoch, wait, attempt + 1,
-                    )
-                    await asyncio.sleep(wait)
-                    continue
-                resp.raise_for_status()
-                data = await resp.json()
-                return data.get("data", {})
-        # Todos los intentos fallaron: devolver {} para que el pipeline continue
-        logger.error("Beaconcha.in 429 persistente en epoch/%s — saltando ciclo", epoch)
-        return {}
+    def __init__(self, base_url: str):
+        self.base_url             = base_url.rstrip("/")
+        self._balance_cache: dict[int, int]  = {}
+        self._stats_cache: dict               = {}
+        self._stats_cache_epoch: int          = -100
+        self._slashings_cache: dict[int, int] = {}
 
-    async def get_epoch_slashings(self, session: aiohttp.ClientSession, epoch: int) -> list:
-        """Lista de slashings en un epoch especifico."""
-        url = f"{self.base_url}/epoch/{epoch}/slashings"
-        async with session.get(url, headers=self.headers) as resp:
-            if resp.status in (404, 429):
-                if resp.status == 429:
-                    logger.warning("Beaconcha.in rate limit en slashings epoch %d — asumiendo 0", epoch)
-                return []
+    async def get_current_epoch(self, session: aiohttp.ClientSession) -> int:
+        """Epoch actual desde el slot del head. Request liviano (~1 KB)."""
+        url = f"{self.base_url}/eth/v1/beacon/headers/head"
+        async with session.get(url) as resp:
             resp.raise_for_status()
             data = await resp.json()
-            return data.get("data", []) or []
+            slot = int(data["data"]["header"]["message"]["slot"])
+            return slot // SLOTS_PER_EPOCH
+
+    async def get_total_balance_gwei(
+        self, session: aiohttp.ClientSession, epoch: int
+    ) -> int:
+        """
+        Suma de balances de todos los validadores al inicio del epoch.
+        Endpoint compacto: solo {index, balance} por validador (~10-15 MB).
+        Cacheado por epoch — descarga ocurre una vez por epoch (~6.4 min).
+        """
+        if epoch in self._balance_cache:
+            return self._balance_cache[epoch]
+
+        state_id = epoch * SLOTS_PER_EPOCH
+        url      = f"{self.base_url}/eth/v1/beacon/states/{state_id}/validator_balances"
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=90)
+            async with session.get(url, timeout=timeout) as resp:
+                if resp.status in (404, 503):
+                    logger.warning(
+                        "Beacon API %d en validator_balances epoch %d — usando cache previo",
+                        resp.status, epoch,
+                    )
+                    return self._balance_cache.get(epoch - 1, 0)
+                resp.raise_for_status()
+                data = await resp.json()
+
+            total = sum(int(v["balance"]) for v in data.get("data", []))
+            self._balance_cache[epoch] = total
+
+            for old in [e for e in list(self._balance_cache) if e < epoch - 5]:
+                del self._balance_cache[old]
+
+            return total
+
+        except asyncio.TimeoutError:
+            logger.warning("Timeout en validator_balances epoch %d — usando cache", epoch)
+            return self._balance_cache.get(epoch - 1, 0)
+
+    async def get_validator_stats(
+        self, session: aiohttp.ClientSession, epoch: int
+    ) -> dict:
+        """
+        Count de validadores activos y eligible balance (sum effective_balance).
+        Request pesado (~50 MB) cacheado 50 epochs (~5.3 hs).
+        Fallback: baseline mainnet si el request falla antes del primer cache.
+        """
+        if self._stats_cache and (epoch - self._stats_cache_epoch) < 50:
+            return self._stats_cache
+
+        state_id = epoch * SLOTS_PER_EPOCH
+        url      = (
+            f"{self.base_url}/eth/v1/beacon/states/{state_id}"
+            "/validators?status=active_ongoing"
+        )
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=180)
+            async with session.get(url, timeout=timeout) as resp:
+                if resp.status in (404, 503):
+                    return self._stats_cache or {
+                        "count":                 _BASELINE_VALIDATOR_COUNT,
+                        "eligible_balance_gwei": _BASELINE_ELIGIBLE_ETH_GWEI,
+                    }
+                resp.raise_for_status()
+                data = await resp.json()
+
+            validators = data.get("data", [])
+            self._stats_cache = {
+                "count":                 len(validators),
+                "eligible_balance_gwei": sum(
+                    int(v["validator"]["effective_balance"]) for v in validators
+                ),
+            }
+            self._stats_cache_epoch = epoch
+            logger.info(
+                "Validator stats actualizados: %d activos, %.0f M ETH elegible",
+                self._stats_cache["count"],
+                self._stats_cache["eligible_balance_gwei"] / 1e18,
+            )
+
+        except asyncio.TimeoutError:
+            logger.warning("Timeout en get_validator_stats epoch %d — usando cache", epoch)
+
+        return self._stats_cache or {
+            "count":                 _BASELINE_VALIDATOR_COUNT,
+            "eligible_balance_gwei": _BASELINE_ELIGIBLE_ETH_GWEI,
+        }
+
+    async def get_epoch_slashings(
+        self, session: aiohttp.ClientSession, epoch: int
+    ) -> int:
+        """
+        Cuenta proposer + attester slashings en los 32 slots del epoch.
+        Slots missed (404) se saltan. Cacheado: un escaneo por epoch.
+        """
+        if epoch in self._slashings_cache:
+            return self._slashings_cache[epoch]
+
+        start_slot = epoch * SLOTS_PER_EPOCH
+        slashed    = 0
+
+        for slot in range(start_slot, start_slot + SLOTS_PER_EPOCH):
+            try:
+                url     = f"{self.base_url}/eth/v2/beacon/blocks/{slot}"
+                timeout = aiohttp.ClientTimeout(total=10)
+                async with session.get(url, timeout=timeout) as resp:
+                    if resp.status == 404:
+                        continue
+                    resp.raise_for_status()
+                    data = await resp.json()
+
+                body     = data["data"]["message"]["body"]
+                slashed += len(body.get("proposer_slashings", []))
+                slashed += len(body.get("attester_slashings", []))
+
+            except (asyncio.TimeoutError, aiohttp.ClientError, Exception) as e:
+                logger.debug("Error leyendo slot %d: %s", slot, e)
+
+            await asyncio.sleep(0.05)   # 50 ms de cortesia entre requests
+
+        self._slashings_cache[epoch] = slashed
+
+        for old in [e for e in list(self._slashings_cache) if e < epoch - 5]:
+            del self._slashings_cache[old]
+
+        if slashed > 0:
+            logger.warning("Slashings detectados en epoch %d: %d", epoch, slashed)
+
+        return slashed
 
 
 # ---------------------------------------------------------------------------
-# Cliente Alchemy
+# Cliente Alchemy (sin cambios respecto a version anterior)
 # ---------------------------------------------------------------------------
 
 class AlchemyClient:
     """Cliente para Alchemy (Execution Layer via web3.py)."""
 
     def __init__(self, http_url: str):
-        self.w3 = Web3(Web3.HTTPProvider(http_url, request_kwargs={"timeout": HTTP_TIMEOUT_SECONDS}))
+        self.w3 = Web3(Web3.HTTPProvider(
+            http_url,
+            request_kwargs={"timeout": HTTP_TIMEOUT_SECONDS},
+        ))
         if not self.w3.is_connected():
             raise ConnectionError(f"No se pudo conectar a Alchemy: {http_url}")
         logger.info("Alchemy conectado. Bloque actual: %d", self.w3.eth.block_number)
@@ -183,11 +301,11 @@ class AlchemyClient:
         """ETH total stakeado en Lido via getTotalPooledEther()."""
         try:
             abi = [{
-                "inputs": [],
-                "name": "getTotalPooledEther",
+                "inputs":  [],
+                "name":    "getTotalPooledEther",
                 "outputs": [{"type": "uint256"}],
                 "stateMutability": "view",
-                "type": "function",
+                "type":    "function",
             }]
             contract = self.w3.eth.contract(
                 address=Web3.to_checksum_address(LIDO_STETH_ADDRESS),
@@ -209,24 +327,27 @@ class QUESTDataPipeline:
     Loop principal de QUEST.
 
     Cada POLL_INTERVAL segundos:
-      1. Obtiene epoch actual y anterior de Beaconcha.in
-      2. Calcula epoch_rewards_gwei como delta de totalvalidatorbalance
-      3. Obtiene datos de Alchemy (bloque, gas, ETH quemado, Lido TVL)
-      4. Construye EpochSnapshot
-      5. Notifica callbacks registrados (API WebSocket, logger)
+      1. Obtiene epoch actual desde head slot (liviano)
+      2. Obtiene total balance de validadores (cacheado por epoch)
+      3. Calcula epoch_rewards_gwei como delta vs epoch anterior almacenado
+      4. Escanea slashings del epoch (cacheado, 32 requests livianos por epoch)
+      5. Refresca validator stats cada 50 epochs (~5.3 hs)
+      6. Obtiene datos de Alchemy (bloque, gas, ETH quemado, Lido TVL)
+      7. Construye EpochSnapshot y notifica callbacks registrados
     """
 
     def __init__(self):
         if not ALCHEMY_HTTP_URL:
             raise ValueError("ALCHEMY_HTTP_URL no configurado. Revisar .env")
-        if not BEACONCHAIN_API_KEY:
-            raise ValueError("BEACONCHAIN_API_KEY no configurado. Revisar .env")
 
-        self.alchemy   = AlchemyClient(ALCHEMY_HTTP_URL)
-        # Participation rate cambia muy lentamente — se cachea 15 polls (~30 min)
+        self.alchemy = AlchemyClient(ALCHEMY_HTTP_URL)
+        self.beacon  = BeaconAPIClient(BEACON_API_URL)
+
+        self._prev_epoch:              int   = -1
+        self._prev_total_balance_gwei: int   = 0
+        self._prev_validator_count:    int   = 0
         self._last_known_participation: float = 0.9521  # baseline mainnet tipico
-        self._participation_refresh_counter: int = 0
-        self.beacon    = BeaconchainClient(BEACONCHAIN_API_KEY, BEACONCHAIN_BASE_URL)
+
         self._snapshots: list[EpochSnapshot] = []
         self._callbacks = []
 
@@ -234,79 +355,56 @@ class QUESTDataPipeline:
         """Registrar un callback async que recibe cada EpochSnapshot nuevo."""
         self._callbacks.append(callback)
 
-    async def _fetch_epoch_snapshot(self, session: aiohttp.ClientSession) -> Optional[EpochSnapshot]:
+    async def _fetch_epoch_snapshot(
+        self, session: aiohttp.ClientSession
+    ) -> Optional[EpochSnapshot]:
         try:
-            # --- Consensus Layer ---
-            current = await self.beacon.get_epoch(session, "latest")
-            if not current:
-                return None  # rate limit persistente — reintentar en el proximo ciclo
-            epoch_number = int(current.get("epoch", 0))
-            await asyncio.sleep(2)  # pausa entre requests para respetar rate limit
+            # --- Epoch actual (liviano, 1 KB) ---
+            epoch_number = await self.beacon.get_current_epoch(session)
 
-            # Rewards reales = delta de balance entre epoch actual y anterior.
-            # totalvalidatorbalance incluye el balance acumulado de todos los
-            # validadores — la diferencia entre epochs consecutivos es el reward
-            # distribuido en ese epoch (ajustado por entradas/salidas de validadores).
-            current_total_balance  = int(current.get("totalvalidatorbalance", 0))
-            epoch_rewards_gwei     = None
-            previous_epoch_data: dict = {}
+            # --- Balance total (cacheado por epoch) ---
+            current_total_balance = await self.beacon.get_total_balance_gwei(
+                session, epoch_number
+            )
 
-            if epoch_number > 0:
-                try:
-                    previous_epoch_data = await self.beacon.get_epoch(session, epoch_number - 1)
-                    previous_total_balance = int(previous_epoch_data.get("totalvalidatorbalance", 0))
-                    prev_validators        = int(previous_epoch_data.get("validatorscount", 0))
-                    curr_validators        = int(current.get("validatorscount", 0))
+            # --- Rewards = delta entre epochs consecutivos ---
+            epoch_rewards_gwei = None
+            if self._prev_epoch >= 0 and self._prev_total_balance_gwei > 0:
+                if epoch_number > self._prev_epoch:
+                    stats           = await self.beacon.get_validator_stats(session, epoch_number)
+                    curr_validators = stats["count"]
+                    new_validators  = max(0, curr_validators - self._prev_validator_count)
+                    new_val_balance = new_validators * 32 * 10**9
 
-                    new_validators         = max(0, curr_validators - prev_validators)
-                    new_validator_balance  = new_validators * 32 * 10**9
-
-                    raw_delta              = current_total_balance - previous_total_balance
-                    epoch_rewards_gwei     = raw_delta - new_validator_balance
+                    raw_delta          = current_total_balance - self._prev_total_balance_gwei
+                    epoch_rewards_gwei = raw_delta - new_val_balance
 
                     if epoch_rewards_gwei < -(10**12):
                         logger.warning(
                             "epoch_rewards_gwei=%d fuera de rango — usando None",
-                            epoch_rewards_gwei
+                            epoch_rewards_gwei,
                         )
                         epoch_rewards_gwei = None
 
-                except Exception as e:
-                    logger.warning("No se pudo obtener epoch anterior: %s", e)
+            self._prev_total_balance_gwei = current_total_balance
+            self._prev_epoch              = epoch_number
 
-            await asyncio.sleep(1)
-            slashings             = await self.beacon.get_epoch_slashings(session, epoch_number)
-            slashed_count         = len(slashings)
+            # --- Validator stats (cacheados 50 epochs) ---
+            stats                     = await self.beacon.get_validator_stats(session, epoch_number)
+            total_validators          = stats["count"]
+            total_active_balance_gwei = stats["eligible_balance_gwei"]
+            self._prev_validator_count = total_validators
+
+            # --- Slashings (cacheados, escaneo unico por epoch) ---
+            slashed_count         = await self.beacon.get_epoch_slashings(session, epoch_number)
             slashing_penalty_gwei = slashed_count * (32 * 10**9 // 32)
 
-            total_validators          = int(current.get("validatorscount", 0))
-            total_active_balance_gwei = int(current.get("eligibleether", 0))
-
-            # Participation rate: se refresca desde Beaconcha.in cada 15 polls (~30 min).
-            # Entre refrescos usa el valor cacheado para no quemar rate limit.
-            self._participation_refresh_counter += 1
-            if self._participation_refresh_counter >= 15:
-                self._participation_refresh_counter = 0
-                try:
-                    finalized = await self.beacon.get_epoch(session, epoch_number - 2)
-                    val = float(finalized.get("globalparticipationrate", 0.0))
-                    if val > 0:
-                        self._last_known_participation = val
-                        logger.info("Participation rate actualizada: %.4f", val)
-                except Exception as e:
-                    logger.warning("No se pudo actualizar participation rate: %s", e)
-            participation_rate = self._last_known_participation
-
             # --- Execution Layer ---
-            block          = self.alchemy.get_latest_block()
-            gas_price_gwei = self.alchemy.get_gas_price_gwei()
-            base_fee       = block["base_fee_per_gas"]
-
-            # ETH quemado por EIP-1559 en este bloque (en Gwei).
-            # Es un proxy de actividad economica, no MEV directo.
+            block           = self.alchemy.get_latest_block()
+            gas_price_gwei  = self.alchemy.get_gas_price_gwei()
+            base_fee        = block["base_fee_per_gas"]
             burned_eth_gwei = int(base_fee * block["gas_used"] / 10**9)
-
-            lido_tvl = self.alchemy.get_lido_tvl_eth()
+            lido_tvl        = self.alchemy.get_lido_tvl_eth()
 
             # --- Campos calculados ---
             if epoch_rewards_gwei is not None:
@@ -314,7 +412,6 @@ class QUESTDataPipeline:
             else:
                 net_rebase_gwei = None
 
-            # Grey Zone: net rebase positivo CON slashings activos
             is_grey_zone = (
                 net_rebase_gwei is not None
                 and net_rebase_gwei > 0
@@ -329,7 +426,7 @@ class QUESTDataPipeline:
                 slashed_validators       = slashed_count,
                 slashing_penalty_gwei    = slashing_penalty_gwei,
                 epoch_rewards_gwei       = epoch_rewards_gwei,
-                participation_rate       = participation_rate,
+                participation_rate       = self._last_known_participation,
                 block_number             = block["number"],
                 avg_gas_price_gwei       = gas_price_gwei,
                 burned_eth_gwei          = burned_eth_gwei,
@@ -353,8 +450,8 @@ class QUESTDataPipeline:
     async def run(self):
         """Loop principal del pipeline."""
         logger.info("QUEST Data Pipeline iniciado")
-        logger.info("  Alchemy:     %s", ALCHEMY_HTTP_URL[:50] + "...")
-        logger.info("  Beaconcha.in: %s", BEACONCHAIN_BASE_URL)
+        logger.info("  Beacon API:    %s", BEACON_API_URL)
+        logger.info("  Alchemy:       %s", (ALCHEMY_HTTP_URL or "")[:50] + "...")
         logger.info("  Poll interval: %ds", POLL_INTERVAL)
 
         timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)

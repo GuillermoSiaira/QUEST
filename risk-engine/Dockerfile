@@ -46,8 +46,8 @@ COPY --from=builder /install /usr/local
 WORKDIR /app
 
 # Sólo código fuente del motor — sin __pycache__, .env, tests
-COPY risk-engine/*.py .
-COPY risk-engine/requirements.txt .
+COPY risk-engine/*.py ./
+COPY risk-engine/requirements.txt ./
 
 # Usuario no-root: buena práctica y requerido por Cloud Run Sandbox
 RUN adduser --disabled-password --gecos "" --uid 1001 quest \
