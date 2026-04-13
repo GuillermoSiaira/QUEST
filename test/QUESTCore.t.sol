@@ -41,8 +41,8 @@ contract QUESTCoreTest is Test {
             ,
             QUESTCore.RiskLevel riskLevel,
             ,
-            bytes32 _dataHash,
-            uint64 _reportedAt
+            ,
+
         ) = core.latestMetrics();
 
         assertEq(epoch, 12);
@@ -158,7 +158,7 @@ contract QUESTCoreTest is Test {
             ,
             ,
             bytes32 storedDataHash,
-            uint64 _reportedAt
+
         ) = core.latestMetrics();
 
         assertEq(storedDataHash, dataHash);

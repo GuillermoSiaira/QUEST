@@ -36,9 +36,9 @@ dashboard/.next/
 dashboard/out/
 
 # Foundry
-contracts/out/
-contracts/cache/
-contracts/broadcast/
+out/
+cache/
+broadcast/
 
 # IDE
 .vscode/
