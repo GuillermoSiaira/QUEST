@@ -48,6 +48,7 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 | Contrato | Red | Address | Tx |
 |---|---|---|---|
 | `QUESTCore` | Sepolia | `0xE81C6B16ecbEC8E4Aadc963e82B27c10c4ab10e7` | `0x48ebe0a7...e8ded2` |
+| `QUESTAwareProtocol` | Sepolia | `0xD693C783AbDCe3B53b2C33D8fEB0ff4E70f12735` | verified ✅ |
 
 Operator: `0xBb3272F387dE5A2c2e3906d24EfaC460a7013f2C`
 
@@ -70,10 +71,13 @@ Operator: `0xBb3272F387dE5A2c2e3906d24EfaC460a7013f2C`
 | Archivo | Descripción |
 |---|---|
 | `contracts/QUESTCore.sol` | Contrato principal: reportEpochMetrics, publishGreyZoneScore, updateAgentReputation |
+| `contracts/QUESTAwareProtocol.sol` | Implementación de referencia ERC-8004: protocolo DeFi que consume señales QUEST |
 | `contracts/interfaces/IERC8033.sol` | Interfaz del oráculo macroprudencial |
-| `contracts/interfaces/IERC8004QuestAware.sol` | Interfaz para agentes QUEST-aware |
+| `contracts/interfaces/IERC8004QuestAware.sol` | Interfaz para protocolos QUEST-aware |
 | `test/QUESTCore.t.sol` | Tests Foundry (10 casos) |
-| `script/Deploy.s.sol` | Deploy script para Sepolia |
+| `test/QUESTAwareProtocol.t.sol` | Tests Foundry (8 casos) |
+| `script/Deploy.s.sol` | Deploy script para QUESTCore |
+| `script/DeployQUESTAwareProtocol.s.sol` | Deploy script para QUESTAwareProtocol |
 | `foundry.toml` | Config Foundry (Sepolia + Mainnet fork) |
 | `contracts/SPEC.md` | Especificación de contratos (referencia) |
 
