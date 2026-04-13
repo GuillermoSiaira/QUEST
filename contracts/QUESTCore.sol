@@ -2,142 +2,116 @@
 pragma solidity ^0.8.24;
 
 import "./interfaces/IERC8033.sol";
-import "./interfaces/IERC8004QuestAware.sol";
 
-/**
- * @title QUESTCore
- * @notice Sovereign Stability Agent — Macroprudential Oracle for Ethereum
- * @dev Stores Computational Monetary Policy (θ) and Quantum Solvency Ratio (QSR)
- *      computed off-chain by the QUEST oracle node (Python/Qiskit).
- *      This contract is NON-COERCIVE — it only emits signals.
- *      Agents opt-in to react to θ in exchange for ERC-8004 reputation.
- */
 contract QUESTCore is IERC8033 {
+    enum RiskLevel {
+        UNSPECIFIED, // 0 — dato no disponible
+        HEALTHY,     // 1 — greyZoneScore < 0.5e18
+        GREY_ZONE,   // 2 — 0.5e18 <= greyZoneScore < 1e18
+        CRITICAL     // 3 — greyZoneScore >= 1e18
+    }
 
-    // --- State ---
+    struct EpochMetrics {
+        uint64  epoch;
+        uint256 greyZoneScore;          // scaled 1e18
+        uint256 grossSlashingLossGwei;
+        uint256 clRewardsGwei;
+        uint256 burnedEthGwei;
+        uint32  participationRate;      // scaled 1e4 (10000 = 100%)
+        RiskLevel riskLevel;
+        bool    hasRewardsData;         // false si no hay datos de rewards del epoch
+        bytes32 dataHash;               // keccak256(abi.encode(todos los campos)) — para verificación AVS futura
+        uint64  reportedAt;             // block.timestamp en el momento del reporte
+    }
+
+    struct PMCSignal {
+        uint64  epoch;
+        uint256 thetaRisk;              // 0-10000
+        uint256 thetaGas;               // 0-10000
+        uint256 thetaLatency;           // 0-10000
+        uint256 thetaFinality;          // 0-10000
+        uint256 thetaIncentives;        // 0-10000
+        uint64  publishedAt;            // block.timestamp
+    }
 
     address public immutable operator;
-
-    /// @notice Latest epoch metrics reported by the oracle node
     EpochMetrics public latestMetrics;
-
-    /// @notice Computational Monetary Policy signal vector
-    PMCSignal public latestPMC;
-
-    /// @notice Agent reputation scores (ERC-8004)
-    mapping(address => uint256) public agentReputation;
-
-    /// @notice Agents registered to receive θ signals
-    mapping(address => bool) public registeredAgents;
-
-    // --- Events ---
+    PMCSignal    public latestPMC;
+    mapping(address => uint256) public agentReputation;  // 0-10000
+    mapping(address => bool)    public registeredAgents;
 
     event EpochMetricsReported(
-        uint256 indexed epoch,
-        uint256 qsr,
-        bool isGreyZone,
-        uint256 timestamp
+        uint64  indexed epoch,
+        uint256 greyZoneScore,
+        RiskLevel riskLevel,
+        bool    hasRewardsData,
+        uint64  reportedAt
     );
 
-    event PMCPublished(
-        uint256 indexed epoch,
+    event GreyZoneScorePublished(
+        uint64  indexed epoch,
         uint256 thetaRisk,
-        uint256 thetaGas,
-        uint256 thetaFinality
+        uint256 thetaFinality,
+        uint64  publishedAt
     );
 
     event AgentReputationUpdated(
         address indexed agent,
         uint256 oldScore,
-        uint256 newScore,
-        bool respectedSolvency
+        uint256 newScore
     );
 
     event AgentRegistered(address indexed agent);
 
-    // --- Structs ---
-
-    struct EpochMetrics {
-        uint256 epoch;
-        uint256 qsr;                    // Quantum Solvency Ratio (scaled 1e18)
-        uint256 totalRewardsGwei;
-        uint256 slashingPenaltyGwei;
-        int256  netRebaseGwei;          // can be negative
-        uint256 participationRate;      // scaled 1e4 (10000 = 100%)
-        uint256 lidoTvlEth;
-        uint256 mevProxyGwei;
-        bool    isGreyZone;
-        uint256 timestamp;
-    }
-
-    struct PMCSignal {
-        uint256 epoch;
-        uint256 thetaRisk;      // Risk coefficient (0-10000, scaled)
-        uint256 thetaGas;       // Gas friction coefficient
-        uint256 thetaLatency;   // Latency penalty coefficient
-        uint256 thetaFinality;  // Finality risk coefficient
-        uint256 thetaIncentives;// Incentive adjustment coefficient
-        uint256 timestamp;
-    }
-
-    // --- Constructor ---
-
     constructor(address _operator) {
+        require(_operator != address(0), "QUESTCore: zero operator");
         operator = _operator;
     }
-
-    // --- Modifiers ---
 
     modifier onlyOperator() {
         require(msg.sender == operator, "QUESTCore: not operator");
         _;
     }
 
-    // --- Core Functions ---
-
-    /**
-     * @notice Report epoch metrics from the oracle node
-     * @dev Called by the AVS operator after computing QSR off-chain
-     */
     function reportEpochMetrics(
-        uint256 epoch,
-        uint256 qsr,
-        uint256 totalRewardsGwei,
-        uint256 slashingPenaltyGwei,
-        int256  netRebaseGwei,
-        uint256 participationRate,
-        uint256 lidoTvlEth,
-        uint256 mevProxyGwei,
-        bool    isGreyZone
+        uint64  epoch,
+        uint256 greyZoneScore,
+        uint256 grossSlashingLossGwei,
+        uint256 clRewardsGwei,
+        uint256 burnedEthGwei,
+        uint32  participationRate,
+        RiskLevel riskLevel,
+        bool    hasRewardsData,
+        bytes32 dataHash
     ) external onlyOperator {
+        uint64 reportedAt = uint64(block.timestamp);
+
         latestMetrics = EpochMetrics({
             epoch: epoch,
-            qsr: qsr,
-            totalRewardsGwei: totalRewardsGwei,
-            slashingPenaltyGwei: slashingPenaltyGwei,
-            netRebaseGwei: netRebaseGwei,
+            greyZoneScore: greyZoneScore,
+            grossSlashingLossGwei: grossSlashingLossGwei,
+            clRewardsGwei: clRewardsGwei,
+            burnedEthGwei: burnedEthGwei,
             participationRate: participationRate,
-            lidoTvlEth: lidoTvlEth,
-            mevProxyGwei: mevProxyGwei,
-            isGreyZone: isGreyZone,
-            timestamp: block.timestamp
+            riskLevel: riskLevel,
+            hasRewardsData: hasRewardsData,
+            dataHash: dataHash,
+            reportedAt: reportedAt
         });
 
-        emit EpochMetricsReported(epoch, qsr, isGreyZone, block.timestamp);
+        emit EpochMetricsReported(epoch, greyZoneScore, riskLevel, hasRewardsData, reportedAt);
     }
 
-    /**
-     * @notice Publish the Computational Monetary Policy signal (θ)
-     * @dev Called after reportEpochMetrics. θ is derived from QSR off-chain.
-     */
-    function publishPMC(
-        uint256 epoch,
+    function publishGreyZoneScore(
+        uint64  epoch,
         uint256 thetaRisk,
         uint256 thetaGas,
         uint256 thetaLatency,
         uint256 thetaFinality,
         uint256 thetaIncentives
     ) external onlyOperator {
+        uint64 publishedAt = uint64(block.timestamp);
+
         latestPMC = PMCSignal({
             epoch: epoch,
             thetaRisk: thetaRisk,
@@ -145,54 +119,34 @@ contract QUESTCore is IERC8033 {
             thetaLatency: thetaLatency,
             thetaFinality: thetaFinality,
             thetaIncentives: thetaIncentives,
-            timestamp: block.timestamp
+            publishedAt: publishedAt
         });
 
-        emit PMCPublished(epoch, thetaRisk, thetaGas, thetaFinality);
-
-        // Notify registered agents
-        // Note: In production this would use a pull pattern to avoid gas issues
+        emit GreyZoneScorePublished(epoch, thetaRisk, thetaFinality, publishedAt);
     }
 
-    /**
-     * @notice Update agent reputation based on behavior during epoch
-     * @param agent Address of the autonomous agent
-     * @param respectedSolvency True if agent reacted defensively to θ signal
-     */
     function updateAgentReputation(
         address agent,
-        bool respectedSolvency
+        uint256 newScore
     ) external onlyOperator {
-        uint256 oldScore = agentReputation[agent];
-        uint256 newScore;
-
-        if (respectedSolvency) {
-            // Reward: +100 reputation points (capped at 10000)
-            newScore = oldScore + 100 > 10000 ? 10000 : oldScore + 100;
-        } else {
-            // Penalty: -200 reputation points (floored at 0)
-            newScore = oldScore > 200 ? oldScore - 200 : 0;
+        if (newScore > 10000) {
+            revert("QUESTCore: score > 10000");
         }
-
+        uint256 oldScore = agentReputation[agent];
         agentReputation[agent] = newScore;
-        emit AgentReputationUpdated(agent, oldScore, newScore, respectedSolvency);
+        emit AgentReputationUpdated(agent, oldScore, newScore);
     }
 
-    /**
-     * @notice Register as a QUEST-aware agent (ERC-8004)
-     */
     function registerAgent() external {
         registeredAgents[msg.sender] = true;
         emit AgentRegistered(msg.sender);
     }
 
-    // --- IERC8033 View Functions ---
-
-    function getLatestQSR() external view override returns (uint256) {
-        return latestMetrics.qsr;
+    function getLatestGreyZoneScore() external view returns (uint256) {
+        return latestMetrics.greyZoneScore;
     }
 
-    function getLatestPMC() external view override returns (
+    function getLatestPMC() external view returns (
         uint256 thetaRisk,
         uint256 thetaGas,
         uint256 thetaFinality
@@ -200,17 +154,21 @@ contract QUESTCore is IERC8033 {
         return (latestPMC.thetaRisk, latestPMC.thetaGas, latestPMC.thetaFinality);
     }
 
-    function isGreyZone() external view override returns (bool) {
-        return latestMetrics.isGreyZone;
+    function isGreyZone() external view returns (bool) {
+        return latestMetrics.riskLevel == RiskLevel.GREY_ZONE
+            || latestMetrics.riskLevel == RiskLevel.CRITICAL;
     }
 
-    function getEpochDensity() external view override returns (uint256) {
-        // D_k = f(MEV, liquidez, slashings, participación, congestión)
-        // Simplified version: weighted combination of available metrics
-        uint256 mevWeight = latestMetrics.mevProxyGwei / 1e6;
-        uint256 slashingWeight = latestMetrics.slashingPenaltyGwei / 1e6;
-        uint256 participationFactor = latestMetrics.participationRate;
-
-        return (mevWeight + slashingWeight) * participationFactor / 10000;
+    function getEpochDensity() external view returns (uint256) {
+        // D_k simplificado: participación × inverso del score normalizado
+        // Si no hay datos de rewards, retornar solo participación
+        if (!latestMetrics.hasRewardsData) {
+            return latestMetrics.participationRate;
+        }
+        uint256 riskFactor = latestMetrics.greyZoneScore > 1e18
+            ? 1e18
+            : latestMetrics.greyZoneScore;
+        // D_k: participación ponderada por riesgo inverso
+        return (uint256(latestMetrics.participationRate) * (1e18 - riskFactor)) / 1e18;
     }
 }

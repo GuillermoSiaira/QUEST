@@ -43,6 +43,11 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 | `quest-api` | https://quest-api-299259685359.us-central1.run.app | ✅ Running |
 | `quest-risk-engine` | https://quest-risk-engine-299259685359.us-central1.run.app | ✅ Running (gRPC, privado) |
 
+### Persistencia:
+- **Firestore** (GCP `quest-493015`, colección `epoch_snapshots`, free tier)
+- Persistente entre reinicios y redeploys — historial acumulativo
+- Service account: `299259685359-compute@developer.gserviceaccount.com` con `roles/datastore.user`
+
 ### Módulos del risk-engine:
 | Archivo | Descripción |
 |---|---|
@@ -52,6 +57,17 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 | `risk-engine/grpc_server.py` | Servidor gRPC: SystemicRiskOracle.CalculateGreyZoneScore |
 | `risk-engine/quest.proto` | Contrato gRPC (proto3) |
 | `test/TheSmartExit.t.sol` | PoC en Solidity (Foundry): demuestra el vector de arbitraje en Lido |
+
+### Contratos (Fase 2 — en progreso):
+| Archivo | Descripción |
+|---|---|
+| `contracts/QUESTCore.sol` | Contrato principal: reportEpochMetrics, publishGreyZoneScore, updateAgentReputation |
+| `contracts/interfaces/IERC8033.sol` | Interfaz del oráculo macroprudencial |
+| `contracts/interfaces/IERC8004QuestAware.sol` | Interfaz para agentes QUEST-aware |
+| `test/QUESTCore.t.sol` | Tests Foundry (10 casos) |
+| `script/Deploy.s.sol` | Deploy script para Holesky |
+| `foundry.toml` | Config Foundry (Holesky + Mainnet fork) |
+| `contracts/SPEC.md` | Especificación de contratos (referencia) |
 
 ### Entornos configurados:
 - **Python:** dependencias en `risk-engine/requirements.txt` (sin Qiskit en producción)
@@ -149,9 +165,12 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 - [x] Dashboard público en Vercel
 
 ### Fase 2 — Contratos Base (Holesky)
-- [ ] Refactorizar `QUESTCore.sol`: `reportEpochMetrics(...)`, `publishGreyZoneScore(θ)`, `updateAgentReputation(...)`
-- [ ] Implementar `IERC8004QuestAware`
-- [ ] Desplegar en Holesky con Foundry
+- [x] Refactorizar `QUESTCore.sol`: `reportEpochMetrics(...)`, `publishGreyZoneScore(θ)`, `updateAgentReputation(...)`
+- [x] Implementar `IERC8004QuestAware` + `IERC8033` con terminología Grey Zone Score
+- [x] Tests Foundry (`test/QUESTCore.t.sol`) — 10 casos cubriendo happy path + access control
+- [x] Deploy script (`script/Deploy.s.sol`) + `foundry.toml` para Holesky
+- [ ] `forge install` (forge-std) + `forge test` en verde
+- [ ] Desplegar en Holesky: `forge script Deploy --rpc-url holesky --broadcast --verify`
 
 ### Fase 3 — AVS (EigenLayer)
 - [ ] `avs create` con DevKit en `quest-avs-node/` (Go)

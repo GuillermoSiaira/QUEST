@@ -28,11 +28,12 @@ Ethereum Beacon REST API (ChainSafe Lodestar) + Alchemy
 ```
 
 ## Stack
-- **Backend:** Python 3.11, FastAPI, aiohttp, web3.py, aiosqlite, grpcio
+- **Backend:** Python 3.11, FastAPI, aiohttp, web3.py, grpcio, google-cloud-firestore
 - **Frontend:** Next.js 16, TypeScript, Tailwind CSS, Recharts
-- **Infrastructure:** GCP Cloud Run, GCP Secret Manager, Vercel
+- **Infrastructure:** GCP Cloud Run, GCP Firestore, GCP Secret Manager, Vercel
 - **Data sources:** Ethereum Beacon REST API — lodestar-mainnet.chainsafe.io (Consensus Layer), Alchemy (Execution Layer)
 - **gRPC service:** `risk-engine/quest.proto` — `SystemicRiskOracle.CalculateGreyZoneScore`
+- **Contracts:** Solidity 0.8.24, Foundry — `QUESTCore.sol` (Holesky, pending deploy)
 
 ## Local Development
 ```

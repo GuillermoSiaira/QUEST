@@ -1,0 +1,14 @@
+[profile.default]
+src     = "contracts"
+test    = "test"
+script  = "script"
+out     = "out"
+libs    = ["lib"]
+solc    = "0.8.24"
+
+[rpc_endpoints]
+holesky = "${HOLESKY_RPC_URL}"
+mainnet = "${ALCHEMY_RPC_URL}"
+
+[etherscan]
+holesky = { key = "${ETHERSCAN_API_KEY}", url = "https://api-holesky.etherscan.io/api" }
