@@ -42,6 +42,7 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 |---|---|---|
 | `quest-api` | https://quest-api-299259685359.us-central1.run.app | ✅ Running |
 | `quest-risk-engine` | https://quest-risk-engine-299259685359.us-central1.run.app | ✅ Running (gRPC, privado) |
+| `quest-avs-node` | https://quest-avs-node-299259685359.us-central1.run.app | ✅ Running (privado) |
 
 ### Contratos desplegados:
 | Contrato | Red | Address | Tx |
@@ -179,10 +180,14 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 - [x] `forge install` (forge-std v1.15.0) + `forge test` 10/10 en verde
 - [x] Desplegar en Sepolia — bloque 10648557, gas: 1,148,831
 
-### Fase 3 — AVS (EigenLayer)
-- [ ] `avs create` con DevKit en `quest-avs-node/` (Go)
-- [ ] Bridge Go ↔ Python via gRPC (cliente → `quest-risk-engine`)
-- [ ] Desplegar en Sepolia EigenLayer
+### Fase 3 — AVS Node (COMPLETADA)
+- [x] `quest-avs-node/` en Go — trusted oracle operator
+- [x] Lee `quest-api/api/status` → convierte → publica on-chain
+- [x] `QUESTCore.reportEpochMetrics` + `publishGreyZoneScore` cada epoch (~384s)
+- [x] Deploy en Cloud Run (`quest-avs-node`, min-instances=1)
+- [x] Primera tx en Sepolia — Epoch 440789 | score=0.0 | HEALTHY
+  - reportEpochMetrics: `0xd6afe896de3bd8d848da7818acc8eac9c00197c7f4b7b84c87cd8b714c29696e`
+  - publishGreyZoneScore: `0xa30b1fbd5afb0c625ddede391614607364902988f9cc8ea2821f6c0d6e091ba7`
 
 ### Fase 4 — Grants
 - [ ] Ethereum Foundation ESP
