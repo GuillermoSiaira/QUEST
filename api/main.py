@@ -20,8 +20,8 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-# Agregar quantum-engine al path para importar el pipeline y el modelo
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "quantum-engine"))
+# Agregar risk-engine al path para importar el pipeline y el modelo
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "risk-engine"))
 
 from data_pipeline import QUESTDataPipeline, EpochSnapshot
 from lrt_risk_model import assess_epoch_risk

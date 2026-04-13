@@ -6,7 +6,7 @@ ENV QUEST_DB_PATH=/app/data/quest.db
 WORKDIR /app
 
 COPY api/ /app/api/
-COPY quantum-engine/ /app/quantum-engine/
+COPY risk-engine/ /app/risk-engine/
 
 RUN mkdir -p /app/data
 

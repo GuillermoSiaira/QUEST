@@ -13,12 +13,15 @@ como EIP oficial. Razón: el proceso de aprobación de EIPs puede tomar años. E
 permite lanzar el servicio de oráculo macroprudencial de forma rápida y descentralizada,
 con seguridad garantizada por restaking económico.
 
-### [FINAL] Go + gRPC + Python (no reescribir Qiskit en Go)
-El AVS node (EigenLayer) opera en Go. El motor cuántico (Qiskit) es Python nativo.
-La solución es una arquitectura de microservicios: Go actúa como "comunicador" que
-recibe requests de la red EigenLayer, llama al servidor gRPC Python, recibe el QSR
-calculado, lo firma criptográficamente y lo publica on-chain.
-Referencia: patrón Go↔gRPC↔backend pesado del MEV Engineering Stack (Faraone-Dev).
+### [FINAL] Go + gRPC + Python puro (sin dependencias de simulación cuántica)
+El AVS node (EigenLayer) opera en Go. El risk-engine es Python nativo con cálculo
+aritmético puro (sin Qiskit). La solución es una arquitectura de microservicios: Go
+actúa como "comunicador" que recibe requests de la red EigenLayer, llama al servidor
+gRPC Python, recibe el GreyZoneScore calculado, lo firma criptográficamente y lo
+publica on-chain.
+Referencia: patrón Go↔gRPC↔backend del MEV Engineering Stack (Faraone-Dev).
+Nota: optimización cuadrática (Qiskit) reservada como línea de investigación futura,
+no como dependencia de producción.
 
 ### [FINAL] Permissionless por diseño
 QUEST no pausa transacciones ni coerciona agentes. Solo emite señales (θ, QSR).
@@ -35,7 +38,8 @@ EigenLayer tiene sus contratos desplegados en Holesky. Sepolia no tiene ServiceM
 de EigenLayer. Flujo: Local (DevKit) → Holesky → Mainnet.
 
 ### [FINAL] Off-chain computation obligatorio
-Qiskit no puede correr en la EVM. La capa de cómputo siempre será off-chain.
+El cálculo del GreyZoneScore no puede correr en la EVM (lectura de APIs externas,
+aritmética de punto flotante). La capa de cómputo siempre será off-chain.
 A futuro: certificada por staking económico de operadores AVS (EigenLayer).
 
 ### [FINAL] Scope: Ethereum L1 únicamente (v1)
@@ -52,9 +56,9 @@ L2s (Arbitrum, Optimism, Base) son expansión natural para v2, no scope actual.
 | Execution | Alchemy (Mainnet) | HTTPS + WebSocket | TVL, reservas, withdrawals, gas, eventos |
 | Consensus | Beaconcha.in | REST API | Slashings, rewards, epoch state, validator status |
 
-### Compute Layer (quantum-engine/)
+### Compute Layer (risk-engine/)
 - **Lenguaje:** Python 3.11+
-- **Motor cuántico:** Qiskit (optimización cuadrática, Hamiltoniano de Ising)
+- **Cálculo de riesgo:** Python puro (aritmética del consensus spec, sin dependencias de simulación)
 - **Bridge:** gRPC server (grpcio)
 - **Archivos clave:**
   - `data_pipeline.py` — ingesta Alchemy + Beaconcha.in
@@ -104,7 +108,7 @@ Ethereum Mainnet
         → Calcula D_k (Epoch Temporal Density)
                 │
                 ▼
-        qsr_calculator.py (Python + Qiskit)
+        grey_zone_calculator.py (Python puro)
         → Mapea estado a Hamiltoniano de Ising
         → Resuelve optimización cuadrática
         → Emite QSR + señal θ

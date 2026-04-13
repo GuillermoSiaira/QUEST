@@ -20,7 +20,7 @@ Thresholds:
 ## Architecture
 ```
 Beaconcha.in + Alchemy
-  -> quantum-engine/data_pipeline.py
+  -> risk-engine/data_pipeline.py
   -> FastAPI (Cloud Run)
   -> WebSocket
   -> Next.js Dashboard (Vercel)

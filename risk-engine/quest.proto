@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package quest.v1;
+
+// go_package requerido para generación de código en el AVS node (Go).
+// Ref: ARCHITECTURE.md — "Go actúa como comunicador que llama al servidor gRPC Python"
+option go_package = "github.com/quest-protocol/quest/gen/quest/v1;questv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SystemicRiskOracle
+// Servicio principal del risk-engine. Recibe el estado de un epoch de Ethereum
+// y retorna el Grey Zone Score + clasificación de riesgo macroprudencial.
+// ─────────────────────────────────────────────────────────────────────────────
+service SystemicRiskOracle {
+  // Calcula el Grey Zone Score para un epoch dado.
+  // Grey Zone Score = gross_slashing_loss / (cl_rewards + mev_rewards)
+  // Un score >= 0.5 indica riesgo latente que safe_border.py de Lido no detecta.
+  rpc CalculateGreyZoneScore (EpochRequest) returns (GreyZoneResponse);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Clasificación de riesgo macroprudencial del epoch.
+// Mapea a los umbrales de classify_epoch_risk() en lrt_risk_model.py:
+//   HEALTHY    -> grey_zone_score < 0.5
+//   GREY_ZONE  -> 0.5 <= grey_zone_score < 1.0
+//   CRITICAL   -> grey_zone_score >= 1.0
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_HEALTHY     = 1;
+  RISK_LEVEL_GREY_ZONE   = 2;
+  RISK_LEVEL_CRITICAL    = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EpochRequest
+// Mapea directamente al dataclass EpochSnapshot de data_pipeline.py.
+// Campos opcionales (Int64Value) corresponden a Optional[int] en Python:
+// son null en el primer ciclo de polling (sin epoch previo para calcular delta).
+// ─────────────────────────────────────────────────────────────────────────────
+message EpochRequest {
+  // Identificador del epoch en la Beacon Chain
+  uint64 epoch = 1;
+
+  // Momento de captura UTC (datetime en Python → Timestamp en proto3)
+  google.protobuf.Timestamp timestamp = 2;
+
+  // ── Consensus Layer (fuente: Beaconcha.in) ────────────────────────────────
+
+  // Total de validadores activos en la red
+  uint64 total_validators = 3;
+
+  // Stake elegible total en Gwei (eligibleether de Beaconcha.in)
+  uint64 total_active_balance_gwei = 4;
+
+  // Cantidad de validadores slasheados en este epoch
+  uint32 slashed_validators = 5;
+
+  // Penalización inicial estimada en Gwei (slashed_validators * 32 ETH / 32)
+  uint64 slashing_penalty_gwei = 6;
+
+  // Rewards reales del epoch = delta de totalvalidatorbalance entre epochs.
+  // Null (ausente) en el primer ciclo de polling — sin epoch previo para comparar.
+  google.protobuf.Int64Value epoch_rewards_gwei = 7;
+
+  // Tasa de participación global de validadores (0.0 – 1.0).
+  // Cacheada cada 15 polls (~30 min) para respetar rate limits de Beaconcha.in.
+  double participation_rate = 8;
+
+  // ── Execution Layer (fuente: Alchemy) ─────────────────────────────────────
+
+  // Último bloque capturado en el ciclo de polling
+  uint64 block_number = 9;
+
+  // Precio de gas promedio en Gwei
+  double avg_gas_price_gwei = 10;
+
+  // ETH quemado por EIP-1559 en el bloque en Gwei (base_fee * gas_used).
+  // Proxy de actividad económica — NO es MEV directo.
+  uint64 burned_eth_gwei = 11;
+
+  // ETH total stakeado en Lido vía getTotalPooledEther() (en ETH, no Gwei)
+  double lido_tvl_eth = 12;
+
+  // ── Campos calculados (derivados en data_pipeline.py) ────────────────────
+
+  // epoch_rewards_gwei - slashing_penalty_gwei.
+  // Null si epoch_rewards_gwei es null (primer ciclo).
+  google.protobuf.Int64Value net_rebase_gwei = 13;
+
+  // True si net_rebase > 0 Y hay slashings activos:
+  // escenario exacto del bypass de safe_border.py en Lido Oracle.
+  bool is_grey_zone = 14;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GreyZoneResponse
+// Mapea directamente al dict retornado por assess_epoch_risk() en lrt_risk_model.py.
+// ─────────────────────────────────────────────────────────────────────────────
+message GreyZoneResponse {
+  // Epoch analizado (espejo del EpochRequest.epoch)
+  uint64 epoch = 1;
+
+  // Pérdida bruta estimada por slashings en ETH.
+  // Calculada según consensus spec (penalización inicial + midterm proporcional).
+  double gross_slashing_loss_eth = 2;
+
+  // Rewards del Consensus Layer en ETH para este epoch.
+  // 0.0 si has_rewards_data = false (primer ciclo sin delta disponible).
+  double cl_rewards_eth = 3;
+
+  // ETH quemado por EIP-1559 en el bloque (proxy de actividad económica).
+  // Usado como aproximación de MEV hasta implementar flashbots/mev-boost en v2.
+  double burned_eth = 4;
+
+  // Grey Zone Score = gross_slashing_loss_eth / (cl_rewards_eth + burned_eth).
+  // Rango: [0.0, +inf). 0.0 si no hay slashings. +inf si hay slashings y rewards = 0.
+  double grey_zone_score = 5;
+
+  // Clasificación macroprudencial derivada del score.
+  RiskLevel risk_level = 6;
+
+  // False en el primer ciclo de polling: epoch_rewards_gwei es null,
+  // cl_rewards_eth = 0.0 y el score no es completamente fiable.
+  bool has_rewards_data = 7;
+}
