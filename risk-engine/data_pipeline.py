@@ -148,11 +148,12 @@ class BeaconAPIClient:
         if epoch in self._balance_cache:
             return self._balance_cache[epoch]
 
-        state_id = epoch * SLOTS_PER_EPOCH
-        url      = f"{self.base_url}/eth/v1/beacon/states/{state_id}/validator_balances"
+        # Usar "head" en lugar de slot numérico — siempre disponible aunque el
+        # slot del inicio del epoch haya sido missed (sin bloque).
+        url = f"{self.base_url}/eth/v1/beacon/states/head/validator_balances"
 
         try:
-            timeout = aiohttp.ClientTimeout(total=90)
+            timeout = aiohttp.ClientTimeout(total=120, connect=15)
             async with session.get(url, timeout=timeout) as resp:
                 if resp.status in (404, 503):
                     logger.warning(
@@ -186,14 +187,14 @@ class BeaconAPIClient:
         if self._stats_cache and (epoch - self._stats_cache_epoch) < 50:
             return self._stats_cache
 
-        state_id = epoch * SLOTS_PER_EPOCH
-        url      = (
-            f"{self.base_url}/eth/v1/beacon/states/{state_id}"
+        # "finalized" es la última epoch finalizada — siempre disponible y estable.
+        url = (
+            f"{self.base_url}/eth/v1/beacon/states/finalized"
             "/validators?status=active_ongoing"
         )
 
         try:
-            timeout = aiohttp.ClientTimeout(total=180)
+            timeout = aiohttp.ClientTimeout(total=240, connect=15)
             async with session.get(url, timeout=timeout) as resp:
                 if resp.status in (404, 503):
                     return self._stats_cache or {
@@ -454,7 +455,9 @@ class QUESTDataPipeline:
         logger.info("  Alchemy:       %s", (ALCHEMY_HTTP_URL or "")[:50] + "...")
         logger.info("  Poll interval: %ds", POLL_INTERVAL)
 
-        timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
+        # Timeout de sesión generoso — los métodos de BeaconAPIClient definen
+        # sus propios timeouts más específicos por endpoint.
+        timeout = aiohttp.ClientTimeout(total=300, connect=15)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             while True:
                 snapshot = await self._fetch_epoch_snapshot(session)
