@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -f
+      - quest-avs-node/Dockerfile
+      - -t
+      - gcr.io/quest-493015/quest-avs-node:latest
+      - quest-avs-node
+images:
+  - gcr.io/quest-493015/quest-avs-node:latest
