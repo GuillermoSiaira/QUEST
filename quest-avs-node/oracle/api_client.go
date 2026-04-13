@@ -36,7 +36,7 @@ type EpochStatus struct {
 
 func FetchLatestEpoch(apiURL string) (*EpochStatus, error) {
     client := &http.Client{Timeout: 15 * time.Second}
-    resp, err := client.Get(apiURL + "/api/latest")
+    resp, err := client.Get(apiURL + "/api/status")
     if err != nil {
         return nil, err
     }
