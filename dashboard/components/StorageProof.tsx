@@ -1,8 +1,7 @@
 import type { EpochStatus } from "@/lib/types";
 
-// dweb.link is Protocol Labs' gateway — content-addressed, no auth required
-const IPFS_GATEWAY = "https://dweb.link/ipfs/";
-const FILECOIN_GATEWAY = "https://dweb.link/ipfs/";
+const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
+const FILECOIN_GATEWAY = "https://files.lighthouse.storage/viewFile/";
 
 function truncateCid(cid: string) {
   return `${cid.slice(0, 10)}…${cid.slice(-6)}`;
