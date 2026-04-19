@@ -458,28 +458,41 @@ class QUESTDataPipeline:
         # Timeout de sesión generoso — los métodos de BeaconAPIClient definen
         # sus propios timeouts más específicos por endpoint.
         timeout = aiohttp.ClientTimeout(total=300, connect=15)
+        # Sólo emitimos callbacks cuando el epoch avanza. Cada epoch dura ~6.4 min
+        # y el pipeline polls cada 60s: sin este guard, los polls 2-6 del mismo
+        # epoch sobreescriben el snapshot con epoch_rewards_gwei=None (el campo
+        # sólo se calcula en el primer poll del epoch nuevo, cuando hay un delta
+        # de balance vs el epoch anterior).
+        last_emitted_epoch = -1
         async with aiohttp.ClientSession(timeout=timeout) as session:
             while True:
                 snapshot = await self._fetch_epoch_snapshot(session)
                 if snapshot:
-                    self._snapshots.append(snapshot)
-                    rewards_str = (
-                        f"{snapshot.epoch_rewards_gwei:,} Gwei"
-                        if snapshot.epoch_rewards_gwei is not None
-                        else "calculando..."
-                    )
-                    logger.info(
-                        "Epoch %d | rewards=%s | slashings=%d | "
-                        "burned=%d Gwei | grey_zone=%s | Lido=%.0f ETH",
-                        snapshot.epoch,
-                        rewards_str,
-                        snapshot.slashed_validators,
-                        snapshot.burned_eth_gwei,
-                        snapshot.is_grey_zone,
-                        snapshot.lido_tvl_eth,
-                    )
-                    for cb in self._callbacks:
-                        await cb(snapshot)
+                    if snapshot.epoch != last_emitted_epoch:
+                        last_emitted_epoch = snapshot.epoch
+                        self._snapshots.append(snapshot)
+                        rewards_str = (
+                            f"{snapshot.epoch_rewards_gwei:,} Gwei"
+                            if snapshot.epoch_rewards_gwei is not None
+                            else "calculando..."
+                        )
+                        logger.info(
+                            "Epoch %d | rewards=%s | slashings=%d | "
+                            "burned=%d Gwei | grey_zone=%s | Lido=%.0f ETH",
+                            snapshot.epoch,
+                            rewards_str,
+                            snapshot.slashed_validators,
+                            snapshot.burned_eth_gwei,
+                            snapshot.is_grey_zone,
+                            snapshot.lido_tvl_eth,
+                        )
+                        for cb in self._callbacks:
+                            await cb(snapshot)
+                    else:
+                        logger.debug(
+                            "Poll dentro del mismo epoch %d — sin cambios (rewards preservados)",
+                            snapshot.epoch,
+                        )
 
                 await asyncio.sleep(POLL_INTERVAL)
 
