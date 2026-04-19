@@ -209,6 +209,20 @@ async def get_history(n: int = 50):
     return snapshot_history[-n:]
 
 
+@app.get("/api/epoch/{epoch_number}", response_model=EpochStatus)
+async def get_epoch(epoch_number: int):
+    """Epoch concreto por número — busca en memoria, luego en Firestore."""
+    for status in reversed(snapshot_history):
+        if status.epoch == epoch_number:
+            return status
+    history = await load_history(MAX_HISTORY)
+    for status in history:
+        if status.epoch == epoch_number:
+            return status
+    from fastapi import HTTPException
+    raise HTTPException(status_code=404, detail=f"Epoch {epoch_number} not found")
+
+
 # ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------

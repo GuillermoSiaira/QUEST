@@ -1,7 +1,6 @@
 import type { EpochStatus } from "@/lib/types";
 
 const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
-const FILECOIN_GATEWAY = "https://files.lighthouse.storage/viewFile/";
 
 function truncateCid(cid: string) {
   return `${cid.slice(0, 10)}…${cid.slice(-6)}`;
@@ -50,6 +49,8 @@ function Layer({
 }
 
 export function StorageProof({ epoch }: { epoch: EpochStatus }) {
+  const verifyUrl = `/epoch/${epoch.epoch}`;
+
   return (
     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm px-5 py-3">
       <div className="flex items-center flex-wrap gap-x-6 gap-y-2">
@@ -68,9 +69,9 @@ export function StorageProof({ epoch }: { epoch: EpochStatus }) {
           label="Filecoin"
           dot={epoch.filecoin_cid ? "green" : "amber"}
           cid={epoch.filecoin_cid}
-          href={epoch.filecoin_cid ? `${FILECOIN_GATEWAY}${epoch.filecoin_cid}` : undefined}
+          href={epoch.filecoin_cid ? verifyUrl : undefined}
           statusText="pending…"
-          linkTitle="Ver en Lighthouse — preview no disponible para JSON, el archivo está almacenado"
+          linkTitle="Ver epoch completo con descarga JSON"
         />
       </div>
     </div>
