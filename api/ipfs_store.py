@@ -90,6 +90,7 @@ async def pin_epoch(status, session: Optional[aiohttp.ClientSession] = None) -> 
                 content_type="application/json",
             )
             form.add_field("name", f"quest-epoch-{status.epoch}")
+            form.add_field("network", "public")   # make CID publicly accessible via gateway
             timeout = aiohttp.ClientTimeout(total=30)
             async with s.post(_PINATA_URL, data=form, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:

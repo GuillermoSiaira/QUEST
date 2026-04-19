@@ -411,6 +411,15 @@ class QUESTDataPipeline:
             burned_eth_gwei = int(base_fee * block["gas_used"] / 10**9)
             lido_tvl        = self.alchemy.get_lido_tvl_eth()
 
+            # Sanity check: negative rewards sin slashings = ruido del Beacon API
+            if epoch_rewards_gwei is not None and epoch_rewards_gwei < 0:
+                if slashed_count == 0:
+                    logger.warning(
+                        "epoch_rewards_gwei=%d negativo con 0 slashings — descartando",
+                        epoch_rewards_gwei,
+                    )
+                    epoch_rewards_gwei = None
+
             # --- Campos calculados ---
             if epoch_rewards_gwei is not None:
                 net_rebase_gwei = epoch_rewards_gwei - slashing_penalty_gwei
