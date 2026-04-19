@@ -143,7 +143,7 @@ async def store_filecoin(status, session: Optional[aiohttp.ClientSession] = None
                 filename=f"quest-epoch-{status.epoch}.json",
                 content_type="application/json",
             )
-            timeout = aiohttp.ClientTimeout(total=60)
+            timeout = aiohttp.ClientTimeout(total=120)
             async with s.post(_LIGHTHOUSE_URL, data=form, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     body = await resp.text()
@@ -151,7 +151,8 @@ async def store_filecoin(status, session: Optional[aiohttp.ClientSession] = None
                                    resp.status, status.epoch, body[:200])
                     return None
                 data = await resp.json()
-                cid  = data.get("data", {}).get("Hash")
+                # Lighthouse /api/v0/add returns {"Name":..., "Hash":..., "Size":...}
+                cid  = data.get("Hash")
                 if cid:
                     logger.info("Epoch %d → Filecoin (Lighthouse) %s", status.epoch, cid)
                 return cid
