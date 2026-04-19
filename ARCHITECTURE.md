@@ -158,9 +158,26 @@ contenerse a sí mismo). Los CIDs se guardan solo en Firestore y se sirven vía 
 | Fase 3.5 — Storage descentralizado (IPFS + Filecoin + epoch viewer) | ✅ COMPLETADA |
 | Fase 4 — Grants (EigenLayer, Filecoin, EF ESP, Lido) | 🔄 En curso |
 | Fase 5 — Descentralización completa (on-chain CIDs, backfill, MEV) | ⏳ Pendiente |
+| Fase 6 — Cobertura multi-protocolo (Lido, Rocket Pool, EtherFi, Swell, Kelp) | ⏳ Pendiente |
 
-## Próximos Pasos (Fase 5)
+## Próximos Pasos
+
+### Fase 5 — Descentralización completa
 - [ ] Publicar `filecoin_cid` on-chain en `QUESTCore.sol` cada epoch
 - [ ] Script de backfill histórico: 1,243+ epochs a IPFS + Filecoin
 - [ ] MEV-Boost data feed: reemplazar proxy `burned_eth` con datos reales de Flashbots
 - [ ] Migrar AVS node de GCP a Pinata OpenClaw Agents
+
+### Fase 6 — Cobertura multi-protocolo
+Desagregar el riesgo de red por protocolo LST/LRT. Hoy QUEST monitorea Ethereum en su totalidad;
+Fase 6 añade scores individuales por protocolo.
+
+| Protocolo | Token | Fuente TVL | Estado |
+|---|---|---|---|
+| Lido | stETH | `stETH.totalSupply()` (ya integrado) | ✅ Parcial |
+| Rocket Pool | rETH | `rETH.totalSupply()` × precio | ⏳ Pendiente |
+| EtherFi | eETH | `EETH.totalValueOutOfLp()` | ⏳ Pendiente |
+| Swell | swETH | `swETH.totalSupply()` × precio | ⏳ Pendiente |
+| Kelp | rsETH | `LRTDepositPool.getTotalAssetDeposits()` | ⏳ Pendiente |
+
+Además: filtrado de slashings por withdrawal credentials → `grey_zone_{protocolo}` individual.

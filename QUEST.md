@@ -282,6 +282,30 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 - [ ] Migrar AVS node de GCP a Pinata OpenClaw Agents
 - [ ] MEV-Boost data feed (v2): reemplazar `burned_eth` proxy con datos reales de flashbots
 
+### Fase 6 — Cobertura multi-protocolo (v2)
+Hoy QUEST monitorea el Consensus Layer de Ethereum en su totalidad (métricas de red).
+La Fase 6 desagrega el riesgo por protocolo LST/LRT:
+
+**TVL por protocolo** (via Alchemy — lectura de contratos on-chain):
+- [ ] Rocket Pool: `rETH.totalSupply()` × precio
+- [ ] EtherFi: `EETH.totalValueOutOfLp()`
+- [ ] Swell: `swETH.totalSupply()` × precio
+- [ ] Kelp: `LRTDepositPool.getTotalAssetDeposits()`
+
+**Slashings atribuidos por protocolo**:
+- [ ] Filtrar validadores slasheados por withdrawal credentials → asignar pérdida a cada protocolo
+- [ ] Nuevos campos en `EpochSnapshot`: `lido_slashing_eth`, `rocketpool_slashing_eth`, etc.
+
+**Grey Zone Score por protocolo**:
+- [ ] `grey_zone_lido = lido_slashing_loss / lido_cl_rewards`
+- [ ] Idem para Rocket Pool, EtherFi, Swell, Kelp
+- [ ] `RiskAssessment` extendido con scores individuales + score de red (actual)
+- [ ] Dashboard: tabla comparativa de riesgo por protocolo
+- [ ] API: `GET /api/protocols` → scores actuales por protocolo
+
+**Nota:** El score de red actual (Fase 1) sigue siendo la señal primaria para el AVS y los contratos.
+Los scores por protocolo son la capa de análisis granular para investigadores y el Lido Grants Program.
+
 ---
 
 ## Contexto Paralelo
