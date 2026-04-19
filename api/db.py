@@ -76,6 +76,14 @@ async def save_epoch(status: EpochStatus) -> None:
     logger.debug("Epoch %d guardado en Firestore", status.epoch)
 
 
+async def update_epoch_cid(epoch: int, ipfs_cid: str) -> None:
+    """Añade el CID de IPFS al documento existente del epoch (update parcial)."""
+    db  = _get_client()
+    ref = db.collection(COLLECTION).document(str(epoch))
+    await ref.update({"ipfs_cid": ipfs_cid})
+    logger.debug("Epoch %d — ipfs_cid actualizado: %s", epoch, ipfs_cid)
+
+
 async def load_history(n: int = 200) -> list[EpochStatus]:
     """Carga los últimos n epochs ordenados de más antiguo a más reciente."""
     try:
