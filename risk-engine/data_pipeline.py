@@ -387,8 +387,12 @@ class QUESTDataPipeline:
                         )
                         epoch_rewards_gwei = None
 
-            self._prev_total_balance_gwei = current_total_balance
-            self._prev_epoch              = epoch_number
+            # Solo actualizar el baseline si obtuvimos un balance real.
+            # Si la Beacon API timeouteó y devolvió 0, conservar el valor
+            # anterior para que el delta del próximo epoch sea correcto.
+            if current_total_balance > 0:
+                self._prev_total_balance_gwei = current_total_balance
+            self._prev_epoch = epoch_number
 
             # --- Validator stats (cacheados 50 epochs) ---
             stats                     = await self.beacon.get_validator_stats(session, epoch_number)

@@ -30,14 +30,14 @@ import aiohttp
 
 logger = logging.getLogger("quest.ipfs")
 
-# ── Pinata (IPFS) ─────────────────────────────────────────────────────────────
+# ── Pinata (IPFS) — V3 API ───────────────────────────────────────────────────
 PINATA_JWT     = os.getenv("PINATA_JWT", "")
 PINATA_GATEWAY = os.getenv("PINATA_GATEWAY", "gateway.pinata.cloud")
-_PINATA_URL    = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
+_PINATA_URL    = "https://uploads.pinata.cloud/v3/files"   # V3: Files:Write scope
 
 # ── Lighthouse (Filecoin) ─────────────────────────────────────────────────────
 LIGHTHOUSE_API_KEY = os.getenv("LIGHTHOUSE_API_KEY", "")
-_LIGHTHOUSE_URL    = "https://node.lighthouse.storage/api/v0/add"
+_LIGHTHOUSE_URL      = "https://node.lighthouse.storage/api/v0/add"
 _LIGHTHOUSE_DEAL_URL = "https://api.lighthouse.storage/api/lighthouse/deal_status"
 
 
@@ -76,22 +76,29 @@ async def pin_epoch(status, session: Optional[aiohttp.ClientSession] = None) -> 
         logger.warning("Error serializando EpochStatus para Pinata: %s", e)
         return None
 
-    headers = {
-        "Authorization": f"Bearer {PINATA_JWT}",
-        "Content-Type":  "application/json",
-    }
+    headers = {"Authorization": f"Bearer {PINATA_JWT}"}
 
     async def _do_pin(s: aiohttp.ClientSession) -> Optional[str]:
         try:
+            # V3 API: multipart/form-data con el JSON como archivo
+            json_bytes = json.dumps(payload, default=str).encode("utf-8")
+            form = aiohttp.FormData()
+            form.add_field(
+                "file",
+                json_bytes,
+                filename=f"quest-epoch-{status.epoch}.json",
+                content_type="application/json",
+            )
+            form.add_field("name", f"quest-epoch-{status.epoch}")
             timeout = aiohttp.ClientTimeout(total=30)
-            async with s.post(_PINATA_URL, json=payload, headers=headers, timeout=timeout) as resp:
+            async with s.post(_PINATA_URL, data=form, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     body = await resp.text()
                     logger.warning("Pinata %d — epoch %d: %s",
                                    resp.status, status.epoch, body[:200])
                     return None
                 data = await resp.json()
-                cid  = data.get("IpfsHash")
+                cid  = data.get("data", {}).get("cid")   # V3 response: {data: {cid: ...}}
                 if cid:
                     logger.info("Epoch %d → IPFS (Pinata) %s", status.epoch, cid)
                 return cid
@@ -149,7 +156,7 @@ async def store_filecoin(status, session: Optional[aiohttp.ClientSession] = None
                     logger.info("Epoch %d → Filecoin (Lighthouse) %s", status.epoch, cid)
                 return cid
         except Exception as e:
-            logger.warning("Error almacenando epoch %d en Filecoin: %s", status.epoch, e)
+            logger.warning("Error almacenando epoch %d en Filecoin: %s — %r", status.epoch, e, e)
             return None
 
     if session is not None:
