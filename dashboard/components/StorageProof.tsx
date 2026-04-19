@@ -19,6 +19,7 @@ function Layer({
   cid?: string;
   href?: string;
   statusText?: string;
+  linkTitle?: string;
 }) {
   const dotClass =
     dot === "green"
@@ -37,7 +38,7 @@ function Layer({
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs font-mono text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline transition-colors"
-          title={cid}
+          title={linkTitle ?? cid}
         >
           {truncateCid(cid)} ↗
         </a>
@@ -69,6 +70,7 @@ export function StorageProof({ epoch }: { epoch: EpochStatus }) {
           cid={epoch.filecoin_cid}
           href={epoch.filecoin_cid ? `${FILECOIN_GATEWAY}${epoch.filecoin_cid}` : undefined}
           statusText="pending…"
+          linkTitle="Ver en Lighthouse — preview no disponible para JSON, el archivo está almacenado"
         />
       </div>
     </div>
