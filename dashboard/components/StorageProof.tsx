@@ -12,6 +12,7 @@ function Layer({
   cid,
   href,
   statusText,
+  linkTitle,
 }: {
   label: string;
   dot: "green" | "amber" | "zinc";
