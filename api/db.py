@@ -77,11 +77,19 @@ async def save_epoch(status: EpochStatus) -> None:
 
 
 async def update_epoch_cid(epoch: int, ipfs_cid: str) -> None:
-    """Añade el CID de IPFS al documento existente del epoch (update parcial)."""
+    """Añade el CID de IPFS (Pinata) al documento existente del epoch."""
     db  = _get_client()
     ref = db.collection(COLLECTION).document(str(epoch))
     await ref.update({"ipfs_cid": ipfs_cid})
-    logger.debug("Epoch %d — ipfs_cid actualizado: %s", epoch, ipfs_cid)
+    logger.debug("Epoch %d — ipfs_cid: %s", epoch, ipfs_cid)
+
+
+async def update_epoch_filecoin(epoch: int, filecoin_cid: str) -> None:
+    """Añade el CID de Filecoin (Lighthouse) al documento existente del epoch."""
+    db  = _get_client()
+    ref = db.collection(COLLECTION).document(str(epoch))
+    await ref.update({"filecoin_cid": filecoin_cid})
+    logger.debug("Epoch %d — filecoin_cid: %s", epoch, filecoin_cid)
 
 
 async def load_history(n: int = 200) -> list[EpochStatus]:

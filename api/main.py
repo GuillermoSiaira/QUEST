@@ -26,8 +26,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "risk-engine"))
 from data_pipeline import QUESTDataPipeline, EpochSnapshot
 from lrt_risk_model import assess_epoch_risk
 from models import EpochStatus, FeedMessage, RiskAssessment
-from db import init_db, save_epoch, load_history, update_epoch_cid
-from ipfs_store import pin_epoch, ipfs_enabled, gateway_url
+from db import init_db, save_epoch, load_history, update_epoch_cid, update_epoch_filecoin
+from ipfs_store import (pin_epoch, ipfs_enabled, gateway_url,
+                        store_filecoin, filecoin_enabled, lighthouse_url)
 
 logger = logging.getLogger("quest.api")
 logging.basicConfig(level=os.getenv("QUEST_LOG_LEVEL", "INFO"))
@@ -97,12 +98,19 @@ async def on_new_snapshot(snapshot: EpochSnapshot):
     # Persistir en Firestore
     await save_epoch(status)
 
-    # Anclar a IPFS (no-op si PINATA_JWT no está configurado)
+    # Anclar a IPFS via Pinata (no-op si PINATA_JWT no está configurado)
     if ipfs_enabled():
         cid = await pin_epoch(status)
         if cid:
             await update_epoch_cid(status.epoch, cid)
             logger.info("Epoch %d → IPFS %s", status.epoch, gateway_url(cid))
+
+    # Storage deal en Filecoin via Lighthouse (no-op si LIGHTHOUSE_API_KEY no está configurado)
+    if filecoin_enabled():
+        filecoin_cid = await store_filecoin(status)
+        if filecoin_cid:
+            await update_epoch_filecoin(status.epoch, filecoin_cid)
+            logger.info("Epoch %d → Filecoin %s", status.epoch, lighthouse_url(filecoin_cid))
 
     # Guardar en cache en memoria
     snapshot_history.append(status)
