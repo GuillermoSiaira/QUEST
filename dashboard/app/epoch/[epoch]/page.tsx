@@ -37,7 +37,7 @@ function CidLink({ label, cid, href }: { label: string; cid: string; href: strin
 }
 
 export default function EpochPage() {
-  const params = useParams();
+  const params = useParams<{ epoch: string }>();
   const epochNumber = Number(params.epoch);
   const [data, setData] = useState<EpochStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
