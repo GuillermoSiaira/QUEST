@@ -52,10 +52,22 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 
 Operator: `0xBb3272F387dE5A2c2e3906d24EfaC460a7013f2C`
 
-### Persistencia:
-- **Firestore** (GCP `quest-493015`, colección `epoch_snapshots`, free tier)
-- Persistente entre reinicios y redeploys — historial acumulativo
-- Service account: `299259685359-compute@developer.gserviceaccount.com` con `roles/datastore.user`
+### Persistencia (3 capas descentralizadas):
+| Capa | Proveedor | Campo en Firestore | Estado |
+|---|---|---|---|
+| Hot storage | GCP Firestore (`epoch_snapshots`) | — | ✅ Live |
+| IPFS | Pinata (`pinata-jwt` en Secret Manager) | `ipfs_cid` | ✅ Live desde 2026-04-19 |
+| Filecoin | Lighthouse (`lighthouse-api-key` en Secret Manager) | `filecoin_cid` | ✅ Live desde 2026-04-19 |
+
+Cada epoch genera: `Beacon Chain → QUEST → Firestore + IPFS (CIDv1) + Filecoin (storage deal)`
+Service account: `299259685359-compute@developer.gserviceaccount.com` con `roles/datastore.user`
+
+### Bug corregido (2026-04-19): epoch_rewards_gwei siempre None
+**Root cause:** El pipeline pollaba cada 60s pero un epoch dura ~6.4 min. `epoch_rewards_gwei`
+solo se calculaba en el primer poll del epoch nuevo; los polls 2-6 lo sobreescribían con None
+vía `db.save_epoch()` (set() total). Resultado: 1,243 epochs con `has_rewards_data=False`.
+**Fix:** Guard `last_emitted_epoch` en `run()` — callbacks solo se invocan cuando el epoch avanza.
+**Efecto secundario positivo:** 1 write/epoch a Firestore en lugar de 6-7 (~85% reducción de costos).
 
 ### Módulos del risk-engine:
 | Archivo | Descripción |
@@ -65,7 +77,16 @@ Operator: `0xBb3272F387dE5A2c2e3906d24EfaC460a7013f2C`
 | `risk-engine/consensus_constants.py` | Constantes del consensus spec de Ethereum |
 | `risk-engine/grpc_server.py` | Servidor gRPC: SystemicRiskOracle.CalculateGreyZoneScore |
 | `risk-engine/quest.proto` | Contrato gRPC (proto3) |
+| `risk-engine/test_historical_grey_zone.py` | Validación histórica del Grey Zone Score vs Firestore (genera CSV) |
 | `test/TheSmartExit.t.sol` | PoC en Solidity (Foundry): demuestra el vector de arbitraje en Lido |
+
+### Módulos de la API:
+| Archivo | Descripción |
+|---|---|
+| `api/main.py` | FastAPI: REST + WebSocket + pipeline callbacks |
+| `api/db.py` | Persistencia Firestore: save, load, update_epoch_cid, update_epoch_filecoin |
+| `api/ipfs_store.py` | Storage descentralizado: Pinata (IPFS) + Lighthouse (Filecoin) |
+| `api/models.py` | Pydantic: EpochStatus, RiskAssessment, FeedMessage |
 
 ### Contratos (Fase 2 — en progreso):
 | Archivo | Descripción |
@@ -193,10 +214,19 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
   - reportEpochMetrics: `0xd6afe896de3bd8d848da7818acc8eac9c00197c7f4b7b84c87cd8b714c29696e`
   - publishGreyZoneScore: `0xa30b1fbd5afb0c625ddede391614607364902988f9cc8ea2821f6c0d6e091ba7`
 
-### Fase 4 — Grants
+### Fase 4 — Grants (en curso, 2026-04-19)
+- [ ] **EigenLayer Foundation** — One-pager redactado, pendiente post en forum.eigenlayer.xyz
+- [ ] **Filecoin Open Grants** — Hasta $50K, aplicación continua via GitHub issues. One-pager en redacción.
+- [ ] **IPFS Utility Grants** — Próxima ronda ~Q3 2026. Fit perfecto: domain-specific IPFS tooling.
 - [ ] Ethereum Foundation ESP
-- [ ] EigenLayer Foundation
 - [ ] Lido Grants Program
+- [ ] Pinata — Contacto directo vía Discord (no tienen portal público de grants)
+
+### Fase 5 — Descentralización completa (próximos pasos)
+- [ ] Publicar `filecoin_cid` on-chain en `QUESTCore.sol` → audit trail completamente verificable
+- [ ] Backfill histórico: pinear los 1,243 epochs existentes a IPFS + Filecoin
+- [ ] Migrar AVS node de GCP a Pinata OpenClaw Agents
+- [ ] MEV-Boost data feed (v2): reemplazar `burned_eth` proxy con datos reales de flashbots
 
 ---
 
@@ -207,5 +237,5 @@ No mezclar contextos. Si aparece código de Abu Oracle / Lilly Engine en este re
 
 ---
 
-*Última actualización del contexto: Abril 2026*
+*Última actualización del contexto: 2026-04-19*
 *Fuente primaria: NotebookLM (documentación QUEST completa) + análisis del repo*
