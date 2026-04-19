@@ -71,7 +71,16 @@ async def pin_epoch(status, session: Optional[aiohttp.ClientSession] = None) -> 
         return None
 
     try:
-        payload = _build_pinata_payload(status)
+        content  = _build_snapshot_content(status)   # clean epoch JSON (no Pinata wrapper)
+        metadata = {
+            "name": f"quest-epoch-{status.epoch}",
+            "keyvalues": {
+                "epoch":           str(status.epoch),
+                "risk_level":      status.risk.risk_level,
+                "grey_zone_score": str(round(status.risk.grey_zone_score, 6)),
+                "network":         os.getenv("QUEST_NETWORK", "mainnet"),
+            },
+        }
     except Exception as e:
         logger.warning("Error serializando EpochStatus para Pinata: %s", e)
         return None
@@ -80,8 +89,8 @@ async def pin_epoch(status, session: Optional[aiohttp.ClientSession] = None) -> 
 
     async def _do_pin(s: aiohttp.ClientSession) -> Optional[str]:
         try:
-            # V3 API: multipart/form-data con el JSON como archivo
-            json_bytes = json.dumps(payload, default=str).encode("utf-8")
+            # V3 API: file = clean JSON, metadata passed separately
+            json_bytes = json.dumps(content, default=str).encode("utf-8")
             form = aiohttp.FormData()
             form.add_field(
                 "file",
@@ -90,7 +99,8 @@ async def pin_epoch(status, session: Optional[aiohttp.ClientSession] = None) -> 
                 content_type="application/json",
             )
             form.add_field("name", f"quest-epoch-{status.epoch}")
-            form.add_field("network", "public")   # make CID publicly accessible via gateway
+            form.add_field("network", "public")   # publicly accessible via gateway
+            form.add_field("keyvalues", json.dumps(metadata["keyvalues"]))
             timeout = aiohttp.ClientTimeout(total=30)
             async with s.post(_PINATA_URL, data=form, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
