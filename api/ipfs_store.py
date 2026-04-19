@@ -37,7 +37,7 @@ _PINATA_URL    = "https://uploads.pinata.cloud/v3/files"   # V3: Files:Write sco
 
 # ── Lighthouse (Filecoin) ─────────────────────────────────────────────────────
 LIGHTHOUSE_API_KEY = os.getenv("LIGHTHOUSE_API_KEY", "")
-_LIGHTHOUSE_URL      = "https://node.lighthouse.storage/api/v0/add"
+_LIGHTHOUSE_URL      = "https://upload.lighthouse.storage/api/v0/add"
 _LIGHTHOUSE_DEAL_URL = "https://api.lighthouse.storage/api/lighthouse/deal_status"
 
 
@@ -151,7 +151,7 @@ async def store_filecoin(status, session: Optional[aiohttp.ClientSession] = None
                                    resp.status, status.epoch, body[:200])
                     return None
                 data = await resp.json()
-                cid  = data.get("Hash")
+                cid  = data.get("data", {}).get("Hash")
                 if cid:
                     logger.info("Epoch %d → Filecoin (Lighthouse) %s", status.epoch, cid)
                 return cid
