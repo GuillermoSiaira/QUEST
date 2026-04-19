@@ -5,6 +5,7 @@ import { EpochHeader } from "@/components/EpochHeader";
 import { RiskTable } from "@/components/RiskTable";
 import { TimelineCharts } from "@/components/TimelineCharts";
 import { EpochInterpretation } from "@/components/EpochInterpretation";
+import { StorageProof } from "@/components/StorageProof";
 
 function ConnectionDot({ status }: { status: string }) {
   const color =
@@ -42,28 +43,28 @@ export default function Dashboard() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
       {/* Topbar */}
       <header className="sticky top-0 z-10 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             QUEST
           </span>
-          <span className="hidden sm:inline text-xs text-zinc-400">
-            EVM Solvency Monitor
+          <span className="hidden sm:inline text-xs text-zinc-400 border-l border-zinc-200 dark:border-zinc-700 pl-3">
+            Macroprudential Oracle · Ethereum
           </span>
         </div>
         <ConnectionDot status={status} />
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 flex flex-col gap-5">
+      <main className="max-w-5xl mx-auto px-4 py-6 flex flex-col gap-4">
         {/* Alert banner */}
         {lastAlert && lastAlert.risk.risk_level !== "HEALTHY" && (
           <div
             className={`rounded-lg px-4 py-3 text-sm font-medium border ${
               lastAlert.risk.risk_level === "CRITICAL"
-                ? "bg-red-50 border-red-200 text-red-800"
-                : "bg-amber-50 border-amber-200 text-amber-800"
+                ? "bg-red-50 border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-900 dark:text-red-300"
+                : "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-900 dark:text-amber-300"
             }`}
           >
-            {lastAlert.risk.risk_level === "CRITICAL" ? "CRITICAL" : "GREY ZONE"} —
+            {lastAlert.risk.risk_level === "CRITICAL" ? "⚠ CRITICAL" : "◈ GREY ZONE"} —
             Epoch #{lastAlert.epoch} | Score:{" "}
             {lastAlert.risk.grey_zone_score.toFixed(4)} |{" "}
             {lastAlert.slashed_validators} slashed validator
@@ -74,42 +75,28 @@ export default function Dashboard() {
         {/* Loading state */}
         {!latest && (
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-6 py-12 flex flex-col items-center gap-3 text-zinc-400">
-            <svg
-              className="animate-spin h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8z"
-              />
+            <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
             </svg>
             <p className="text-sm">
-              {status === "connecting"
-                ? "Connecting to pipeline…"
-                : "Waiting for first epoch snapshot…"}
+              {status === "connecting" ? "Connecting to pipeline…" : "Waiting for first epoch snapshot…"}
             </p>
           </div>
         )}
 
-        {/* Main content — only when we have data */}
+        {/* Main content */}
         {latest && (
           <>
             <EpochHeader epoch={latest} snapshotAgeSeconds={snapshotAgeSeconds} />
+            <StorageProof epoch={latest} />
             <EpochInterpretation epoch={latest} secondsToRefresh={secondsToRefresh} />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <RiskTable epoch={latest} />
-              <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              <div className="lg:col-span-2">
+                <RiskTable epoch={latest} />
+              </div>
+              <div className="lg:col-span-3">
                 <TimelineCharts history={history} />
               </div>
             </div>
@@ -117,8 +104,14 @@ export default function Dashboard() {
         )}
       </main>
 
-      <footer className="text-center py-6 text-xs text-zinc-400">
-        QUEST — Macroprudential Oracle for the Ethereum Ecosystem
+      <footer className="text-center py-6 text-xs text-zinc-400 space-y-1">
+        <p>QUEST — Macroprudential Oracle for the Ethereum Ecosystem</p>
+        <p className="text-zinc-500 dark:text-zinc-600">
+          Each epoch is anchored to{" "}
+          <span className="text-zinc-400">IPFS</span> ·{" "}
+          <span className="text-zinc-400">Filecoin</span> ·{" "}
+          <span className="text-zinc-400">Firestore</span>
+        </p>
       </footer>
     </div>
   );

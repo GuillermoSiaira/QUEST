@@ -34,6 +34,10 @@ export interface EpochStatus {
 
   // Risk
   risk: RiskAssessment;
+
+  // Decentralized storage
+  ipfs_cid?: string;
+  filecoin_cid?: string;
 }
 
 export type MessageType = "snapshot" | "alert" | "ping";

@@ -142,4 +142,6 @@ def _doc_to_epoch_status(d: dict) -> EpochStatus:
         net_rebase_eth           = d.get("net_rebase_eth"),
         is_grey_zone             = bool(d["is_grey_zone"]),
         risk                     = risk,
+        ipfs_cid                 = d.get("ipfs_cid"),
+        filecoin_cid             = d.get("filecoin_cid"),
     )

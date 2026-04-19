@@ -49,6 +49,10 @@ class EpochStatus(BaseModel):
     # Risk assessment
     risk: RiskAssessment
 
+    # Decentralized storage
+    ipfs_cid: Optional[str] = None
+    filecoin_cid: Optional[str] = None
+
 
 class FeedMessage(BaseModel):
     """

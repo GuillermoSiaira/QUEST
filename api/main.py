@@ -98,19 +98,24 @@ async def on_new_snapshot(snapshot: EpochSnapshot):
     # Persistir en Firestore
     await save_epoch(status)
 
-    # Anclar a IPFS via Pinata (no-op si PINATA_JWT no está configurado)
-    if ipfs_enabled():
-        cid = await pin_epoch(status)
-        if cid:
-            await update_epoch_cid(status.epoch, cid)
-            logger.info("Epoch %d → IPFS %s", status.epoch, gateway_url(cid))
+    # IPFS + Filecoin en paralelo
+    async def _pin_ipfs():
+        return await pin_epoch(status) if ipfs_enabled() else None
 
-    # Storage deal en Filecoin via Lighthouse (no-op si LIGHTHOUSE_API_KEY no está configurado)
-    if filecoin_enabled():
-        filecoin_cid = await store_filecoin(status)
-        if filecoin_cid:
-            await update_epoch_filecoin(status.epoch, filecoin_cid)
-            logger.info("Epoch %d → Filecoin %s", status.epoch, lighthouse_url(filecoin_cid))
+    async def _pin_filecoin():
+        return await store_filecoin(status) if filecoin_enabled() else None
+
+    ipfs_cid, filecoin_cid = await asyncio.gather(_pin_ipfs(), _pin_filecoin())
+
+    if ipfs_cid:
+        await update_epoch_cid(status.epoch, ipfs_cid)
+        logger.info("Epoch %d → IPFS %s", status.epoch, gateway_url(ipfs_cid))
+    if filecoin_cid:
+        await update_epoch_filecoin(status.epoch, filecoin_cid)
+        logger.info("Epoch %d → Filecoin %s", status.epoch, lighthouse_url(filecoin_cid))
+
+    # Adjuntar CIDs al status antes de hacer broadcast
+    status = status.model_copy(update={"ipfs_cid": ipfs_cid, "filecoin_cid": filecoin_cid})
 
     # Guardar en cache en memoria
     snapshot_history.append(status)
