@@ -53,8 +53,8 @@ L2s (Arbitrum, Optimism, Base) son expansión natural para v2, no scope actual.
 ### Data Sources
 | Layer | Provider | Endpoint | Datos |
 |---|---|---|---|
-| Execution | Alchemy (Mainnet) | HTTPS + WebSocket | TVL, reservas, withdrawals, gas, eventos |
-| Consensus | Beaconcha.in | REST API | Slashings, rewards, epoch state, validator status |
+| Execution | Alchemy (Mainnet) | HTTPS + WebSocket | TVL Lido, gas price, burned ETH proxy |
+| Consensus | Beacon REST API (ChainSafe Lodestar) | REST | Slashings, rewards, epoch state, validator status, participation |
 
 ### Compute Layer (risk-engine/)
 - **Lenguaje:** Python 3.11+
@@ -84,10 +84,16 @@ L2s (Arbitrum, Optimism, Base) son expansión natural para v2, no scope actual.
   - `interfaces/IERC8004QuestAware.sol` — interfaz para agentes que reaccionan a θ
 
 ### Dashboard (dashboard/)
-- **Framework:** Next.js + React
-- **Datos:** WebSocket desde data_pipeline.py
-- **Métricas:** Prometheus + Grafana (infraestructura), UI custom (público)
-- **Público:** Todos — desarrolladores, operadores, público general
+- **Framework:** Next.js 16 + React (App Router, Turbopack)
+- **Deploy:** Vercel (auto-deploy desde master) → quest-orcin-sigma.vercel.app
+- **Datos:** WebSocket (`/ws/feed`) para live feed; REST (`/api/status`, `/api/history`) para carga inicial
+- **Componentes clave:**
+  - `EpochHeader.tsx` — stat bar con acento de color por risk level
+  - `StorageProof.tsx` — barra de persistencia 3 capas (Firestore · IPFS · Filecoin) con dots de estado
+  - `TimelineCharts.tsx` — gráficos de Grey Zone Score, Participation Rate, Slashed Validators (50 epochs)
+  - `EpochInterpretation.tsx` — análisis en lenguaje natural via Claude API
+  - `app/epoch/[epoch]/page.tsx` — epoch viewer con Download JSON funcional y proof de storage
+- **Público:** Todos — desarrolladores, operadores, auditores, grant reviewers
 
 ---
 
@@ -96,58 +102,65 @@ L2s (Arbitrum, Optimism, Base) son expansión natural para v2, no scope actual.
 ```
 Ethereum Mainnet
     │
-    ├── Execution Layer (Alchemy WebSocket)
-    │   └── Bloques nuevos, eventos, gas, MEV proxy
+    ├── Execution Layer (Alchemy)
+    │   └── Gas price, burned ETH, Lido TVL
     │
-    └── Consensus Layer (Beaconcha.in API)
-        └── Epochs, slashings, rewards por validador
+    └── Consensus Layer (Beacon REST API)
+        └── Epoch state, slashings, rewards, participation
                 │
                 ▼
-        data_pipeline.py (Python)
-        → Normaliza y combina datos
-        → Calcula D_k (Epoch Temporal Density)
+        data_pipeline.py (Python) — poll cada 60s, emite 1 snapshot/epoch
+        → EpochSnapshot: balance delta → epoch_rewards_gwei
+        → Guard: rewards < 0 con 0 slashings → discard (Beacon API timing noise)
                 │
                 ▼
-        grey_zone_calculator.py (Python puro)
-        → Mapea estado a Hamiltoniano de Ising
-        → Resuelve optimización cuadrática
-        → Emite QSR + señal θ
+        lrt_risk_model.py (Python puro)
+        → Grey Zone Score = gross_slashing_loss / (cl_rewards + burned_eth)
+        → RiskAssessment: HEALTHY / GREY_ZONE / CRITICAL
                 │
-         ┌──────┴──────┐
-         ▼             ▼
-    gRPC server    WebSocket
-    (Go AVS)       (Dashboard)
-         │
-         ▼
-    QUESTCore.sol
-    → Almacena θ on-chain
-    → Agentes ERC-8004 reaccionan
+                ▼
+        on_new_snapshot() — main.py (asyncio)
+        → save_epoch() → Firestore
+        → asyncio.gather:
+            ├── pin_epoch()      → Pinata V3 → IPFS CID (CIDv1, gateway.pinata.cloud)
+            └── store_filecoin() → Lighthouse → Filecoin CID (files.lighthouse.storage)
+        → update_epoch_cid() + update_epoch_filecoin() → Firestore
+        → model_copy(ipfs_cid, filecoin_cid) → broadcast WebSocket
+                │
+         ┌──────┴──────────┐
+         ▼                  ▼
+    Go AVS Node         Dashboard (Next.js)
+    → QUESTCore.sol     → EpochHeader + StorageProof
+    → on-chain every    → /epoch/[n] viewer
+      ~384s             → Download JSON button
 ```
+
+### Persistencia de cada epoch
+| Capa | Proveedor | Acceso | Latencia |
+|---|---|---|---|
+| Hot | Firestore (`epoch_snapshots`) | API interna | < 100ms |
+| IPFS | Pinata V3 (`network=public`) | `gateway.pinata.cloud/ipfs/<CID>` | ~1-2s upload |
+| Filecoin | Lighthouse (`/api/v0/add`) | `files.lighthouse.storage/viewFile/<CID>` | ~5-30s upload |
+
+**Nota sobre CIDs en el JSON almacenado:** Los campos `ipfs_cid` y `filecoin_cid` aparecen como `null`
+en el JSON guardado en IPFS/Filecoin — esto es correcto (referencia circular: el CID no puede
+contenerse a sí mismo). Los CIDs se guardan solo en Firestore y se sirven vía la API.
 
 ---
 
-## Próximos Pasos
+## Estado de Fases (actualizado 2026-04-19)
 
-### Fase 1 — Data Pipeline (Ahora)
-- [ ] `data_pipeline.py`: conectar Alchemy + Beaconcha.in
-- [ ] Validar datos reales de slashings y rewards por epoch
-- [ ] `qsr_calculator.py`: adaptar `quantum_exploit.py` como módulo limpio
+| Fase | Estado |
+|---|---|
+| Fase 1 — Risk Engine (data pipeline + Grey Zone Score + gRPC) | ✅ COMPLETADA |
+| Fase 2 — Contratos (QUESTCore + QUESTAwareProtocol en Sepolia) | ✅ COMPLETADA |
+| Fase 3 — AVS Node (Go, Cloud Run, on-chain cada epoch) | ✅ COMPLETADA |
+| Fase 3.5 — Storage descentralizado (IPFS + Filecoin + epoch viewer) | ✅ COMPLETADA |
+| Fase 4 — Grants (EigenLayer, Filecoin, EF ESP, Lido) | 🔄 En curso |
+| Fase 5 — Descentralización completa (on-chain CIDs, backfill, MEV) | ⏳ Pendiente |
 
-### Fase 2 — Contratos Base (Holesky)
-- [ ] Refactorizar `QUESTCore.sol`
-- [ ] Implementar `IERC8004QuestAware`
-- [ ] Desplegar en Holesky con Foundry
-
-### Fase 3 — Dashboard Público
-- [ ] UI en tiempo real con datos reales
-- [ ] Publicar como public good
-
-### Fase 4 — AVS (EigenLayer)
-- [ ] `avs create` con DevKit
-- [ ] Bridge Go↔Python via gRPC
-- [ ] Desplegar en Holesky EigenLayer
-
-### Fase 5 — Grants
-- [ ] Ethereum Foundation
-- [ ] EigenLayer Foundation
-- [ ] Lido Grants Program
+## Próximos Pasos (Fase 5)
+- [ ] Publicar `filecoin_cid` on-chain en `QUESTCore.sol` cada epoch
+- [ ] Script de backfill histórico: 1,243+ epochs a IPFS + Filecoin
+- [ ] MEV-Boost data feed: reemplazar proxy `burned_eth` con datos reales de Flashbots
+- [ ] Migrar AVS node de GCP a Pinata OpenClaw Agents

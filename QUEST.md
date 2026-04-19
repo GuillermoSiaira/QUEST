@@ -40,9 +40,9 @@ es indispensable — los protocolos no se auto-regularán en detrimento de su UX
 ### Código en producción (GCP Cloud Run):
 | Servicio | URL | Estado |
 |---|---|---|
-| `quest-api` | https://quest-api-299259685359.us-central1.run.app | ✅ Running |
-| `quest-risk-engine` | https://quest-risk-engine-299259685359.us-central1.run.app | ✅ Running (gRPC, privado) |
-| `quest-avs-node` | https://quest-avs-node-299259685359.us-central1.run.app | ✅ Running (privado) |
+| `quest-api` | https://quest-api-oo2ixbxsba-uc.a.run.app | ✅ Running |
+| `quest-risk-engine` | https://quest-risk-engine-oo2ixbxsba-uc.a.run.app | ✅ Running (gRPC, privado) |
+| `quest-avs-node` | https://quest-avs-node-oo2ixbxsba-uc.a.run.app | ✅ Running (privado) |
 
 ### Contratos desplegados:
 | Contrato | Red | Address | Tx |
@@ -62,12 +62,45 @@ Operator: `0xBb3272F387dE5A2c2e3906d24EfaC460a7013f2C`
 Cada epoch genera: `Beacon Chain → QUEST → Firestore + IPFS (CIDv1) + Filecoin (storage deal)`
 Service account: `299259685359-compute@developer.gserviceaccount.com` con `roles/datastore.user`
 
-### Bug corregido (2026-04-19): epoch_rewards_gwei siempre None
-**Root cause:** El pipeline pollaba cada 60s pero un epoch dura ~6.4 min. `epoch_rewards_gwei`
-solo se calculaba en el primer poll del epoch nuevo; los polls 2-6 lo sobreescribían con None
-vía `db.save_epoch()` (set() total). Resultado: 1,243 epochs con `has_rewards_data=False`.
-**Fix:** Guard `last_emitted_epoch` en `run()` — callbacks solo se invocan cuando el epoch avanza.
-**Efecto secundario positivo:** 1 write/epoch a Firestore en lugar de 6-7 (~85% reducción de costos).
+### Bugs corregidos (2026-04-19) — Storage descentralizado
+
+**1. epoch_rewards_gwei siempre None**
+Root cause: El pipeline pollaba cada 60s pero un epoch dura ~6.4 min. `epoch_rewards_gwei`
+solo se calculaba en el primer poll del epoch nuevo; los polls 2-6 lo sobreescribían con None.
+Fix: Guard `last_emitted_epoch` en `run()` — callbacks solo se invocan cuando el epoch avanza.
+Efecto secundario positivo: 1 write/epoch a Firestore en lugar de 6-7 (~85% reducción de costos).
+
+**2. Pinata V3 — upload del wrapper en lugar del JSON canónico**
+Root cause: Se pasaba `_build_pinata_payload(status)` como contenido del archivo, resultando en
+`{"pinataContent": {...}, "pinataMetadata": {...}}` almacenado en IPFS en lugar del JSON limpio.
+Fix: El archivo subido es `_build_snapshot_content(status)` — JSON canónico `{schema, network, data}`.
+Adicionalmente: añadir campo `network=public` al multipart form para que el gateway sirva el contenido
+(sin este campo, Pinata V3 crea archivos privados y el gateway devuelve 403/timeout).
+
+**3. Lighthouse — CID parsing incorrecto**
+Root cause: Se parseaba `data.get("data", {}).get("Hash")` pero Lighthouse `/api/v0/add` devuelve
+`{"Name": ..., "Hash": ..., "Size": ...}` en la raíz, sin wrapper `data`.
+Fix: `cid = data.get("Hash")`. Timeout aumentado de 60s a 120s (Cloud Run → Lighthouse es más lento).
+
+**4. epoch_rewards_gwei negativo (-408 ETH) con 0 slashings**
+Root cause: Ruido de timing en la Beacon API — el balance baseline se capturaba de un estado
+de epoch distinto al de los rewards, produciendo un delta negativo imposible.
+Fix: Guard en `data_pipeline.py` — si `epoch_rewards_gwei < 0` y `slashed_count == 0`, descartar como None.
+
+**5. Gateway URLs incorrectos**
+- `gateway.lighthouse.storage` no resuelve DNS públicamente. URL correcta: `files.lighthouse.storage/viewFile/<CID>`
+- `dweb.link` devuelve 504 para CIDs de Pinata (Pinata almacena en nodos IPFS privados, no anuncia al DHT público).
+  Solo `gateway.pinata.cloud/ipfs/<CID>` sirve el contenido.
+
+**6. StorageProof.tsx — `linkTitle` no destructurado**
+Root cause: La prop `linkTitle` estaba declarada en el tipo pero no en la destructuración del componente,
+causando `Cannot find name 'linkTitle'` en el type-check de Next.js 16 (Turbopack).
+Fix: añadir `linkTitle` a la destructuración de parámetros.
+
+**7. EpochPage — useParams sin tipo genérico**
+Root cause: En Next.js 15+, `useParams()` sin tipo genérico devuelve `{}`, haciendo que `params.epoch`
+sea un error TypeScript.
+Fix: `useParams<{ epoch: string }>()`.
 
 ### Módulos del risk-engine:
 | Archivo | Descripción |
@@ -83,10 +116,19 @@ vía `db.save_epoch()` (set() total). Resultado: 1,243 epochs con `has_rewards_d
 ### Módulos de la API:
 | Archivo | Descripción |
 |---|---|
-| `api/main.py` | FastAPI: REST + WebSocket + pipeline callbacks |
+| `api/main.py` | FastAPI: REST + WebSocket + pipeline callbacks + `/api/epoch/{n}` |
 | `api/db.py` | Persistencia Firestore: save, load, update_epoch_cid, update_epoch_filecoin |
-| `api/ipfs_store.py` | Storage descentralizado: Pinata (IPFS) + Lighthouse (Filecoin) |
-| `api/models.py` | Pydantic: EpochStatus, RiskAssessment, FeedMessage |
+| `api/ipfs_store.py` | Storage descentralizado: Pinata V3 (IPFS) + Lighthouse (Filecoin) |
+| `api/models.py` | Pydantic: EpochStatus (+ ipfs_cid, filecoin_cid), RiskAssessment, FeedMessage |
+
+**Endpoints REST:**
+| Método | Path | Descripción |
+|---|---|---|
+| GET | `/health` | Healthcheck + conteo de snapshots en memoria |
+| GET | `/api/status` | Último EpochStatus disponible |
+| GET | `/api/history?n=50` | Últimos n snapshots (max 200) |
+| GET | `/api/epoch/{epoch_number}` | Epoch concreto por número (memoria → Firestore) |
+| WS  | `/ws/feed` | Stream en tiempo real (FeedMessage JSON) |
 
 ### Contratos (Fase 2 — en progreso):
 | Archivo | Descripción |
@@ -214,9 +256,21 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
   - reportEpochMetrics: `0xd6afe896de3bd8d848da7818acc8eac9c00197c7f4b7b84c87cd8b714c29696e`
   - publishGreyZoneScore: `0xa30b1fbd5afb0c625ddede391614607364902988f9cc8ea2821f6c0d6e091ba7`
 
+### Fase 3.5 — Dashboard & Persistencia (COMPLETADA, 2026-04-19)
+- [x] `StorageProof.tsx` — barra de 3 capas (Firestore · IPFS · Filecoin) con dots de estado y CID links
+- [x] `EpochHeader.tsx` — rediseño: borde de acento por risk level, stat labels mejorados
+- [x] `app/epoch/[epoch]/page.tsx` — epoch viewer propio con Download JSON funcional
+  - Reemplaza Lighthouse viewer (cuyo botón Download estaba roto)
+  - Enlace Filecoin en StorageProof apunta a `/epoch/{n}` en lugar del viewer de Lighthouse
+- [x] `app/page.tsx` — StorageProof integrado entre EpochHeader y Analysis; layout `lg:grid-cols-5`
+- [x] Stack de storage completamente operativo: cada epoch escribe en paralelo a IPFS + Filecoin
+  - `asyncio.gather(_pin_ipfs(), _pin_filecoin())` — ~2s vs ~4s secuencial
+  - CIDs adjuntados al EpochStatus via `model_copy(update=...)` antes del broadcast WebSocket
+  - `EpochStatus.ipfs_cid` y `EpochStatus.filecoin_cid` persistidos en Firestore y devueltos por la API
+
 ### Fase 4 — Grants (en curso, 2026-04-19)
 - [ ] **EigenLayer Foundation** — One-pager redactado, pendiente post en forum.eigenlayer.xyz
-- [ ] **Filecoin Open Grants** — Hasta $50K, aplicación continua via GitHub issues. One-pager en redacción.
+- [ ] **Filecoin Open Grants** — Hasta $50K, aplicación continua via GitHub issues. One-pager listo.
 - [ ] **IPFS Utility Grants** — Próxima ronda ~Q3 2026. Fit perfecto: domain-specific IPFS tooling.
 - [ ] Ethereum Foundation ESP
 - [ ] Lido Grants Program
@@ -224,7 +278,7 @@ en Python puro, certificable por staking económico vía AVS (EigenLayer) en v2.
 
 ### Fase 5 — Descentralización completa (próximos pasos)
 - [ ] Publicar `filecoin_cid` on-chain en `QUESTCore.sol` → audit trail completamente verificable
-- [ ] Backfill histórico: pinear los 1,243 epochs existentes a IPFS + Filecoin
+- [ ] Backfill histórico: pinear los 1,243+ epochs existentes a IPFS + Filecoin
 - [ ] Migrar AVS node de GCP a Pinata OpenClaw Agents
 - [ ] MEV-Boost data feed (v2): reemplazar `burned_eth` proxy con datos reales de flashbots
 
@@ -237,5 +291,5 @@ No mezclar contextos. Si aparece código de Abu Oracle / Lilly Engine en este re
 
 ---
 
-*Última actualización del contexto: 2026-04-19*
-*Fuente primaria: NotebookLM (documentación QUEST completa) + análisis del repo*
+*Última actualización del contexto: 2026-04-19 (post Fase 3.5 — storage descentralizado completo)*
+*Fuente primaria: código en producción + análisis del repo*
