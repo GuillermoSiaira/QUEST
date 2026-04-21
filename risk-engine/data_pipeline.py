@@ -411,12 +411,17 @@ class QUESTDataPipeline:
             burned_eth_gwei = int(base_fee * block["gas_used"] / 10**9)
             lido_tvl        = self.alchemy.get_lido_tvl_eth()
 
-            # Sanity check: negative rewards sin slashings = ruido del Beacon API
+            # Sanity check: descarta rewards negativos si la magnitud no es explicable
+            # por los slashings del epoch. Con N slashings la pérdida máxima de
+            # balance es N * 32 ETH (effective_balance completo). Cualquier delta
+            # mayor en módulo es ruido del Beacon API (timing de lecturas de balance).
             if epoch_rewards_gwei is not None and epoch_rewards_gwei < 0:
-                if slashed_count == 0:
+                max_plausible_loss_gwei = slashed_count * 32 * 10**9
+                if abs(epoch_rewards_gwei) > max_plausible_loss_gwei:
                     logger.warning(
-                        "epoch_rewards_gwei=%d negativo con 0 slashings — descartando",
-                        epoch_rewards_gwei,
+                        "epoch_rewards_gwei=%d descartado — excede pérdida máxima "
+                        "plausible de %d slashings (%d Gwei)",
+                        epoch_rewards_gwei, slashed_count, max_plausible_loss_gwei,
                     )
                     epoch_rewards_gwei = None
 

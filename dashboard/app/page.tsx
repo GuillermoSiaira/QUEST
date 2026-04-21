@@ -6,6 +6,7 @@ import { RiskTable } from "@/components/RiskTable";
 import { TimelineCharts } from "@/components/TimelineCharts";
 import { EpochInterpretation } from "@/components/EpochInterpretation";
 import { StorageProof } from "@/components/StorageProof";
+import { AgentPanel } from "@/components/AgentPanel";
 
 function ConnectionDot({ status }: { status: string }) {
   const color =
@@ -93,8 +94,9 @@ export default function Dashboard() {
             <EpochInterpretation epoch={latest} secondsToRefresh={secondsToRefresh} />
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              <div className="lg:col-span-2">
+              <div className="lg:col-span-2 flex flex-col gap-4">
                 <RiskTable epoch={latest} />
+                <AgentPanel gzs={latest.risk.grey_zone_score} />
               </div>
               <div className="lg:col-span-3">
                 <TimelineCharts history={history} />
