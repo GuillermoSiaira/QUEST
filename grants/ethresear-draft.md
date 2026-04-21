@@ -1,8 +1,6 @@
 # QUEST: A Macroprudential Oracle for Ethereum's Consensus Layer
 
-> Draft para ethresear.ch — pendiente de publicación
-
-**TL;DR:** We identify a structural gap in Lido's `safe_border.py` where slashing debt accumulates silently while MEV rewards mask technical insolvency. We call this the *Grey Zone*. QUEST is a live oracle (Sepolia) that publishes a Grey Zone Score every epoch (~384s), backed by a 3-layer decentralized storage stack and an EigenLayer AVS node. We discuss how this signal can be consumed by autonomous agents and QUEST-aware protocols to enable macroprudential coordination in DeFi.
+**TL;DR:** We identify a structural gap in Lido's `safe_border.py` where slashing debt accumulates silently while MEV rewards mask technical insolvency. We call this the *Grey Zone*. QUEST is a live oracle (Sepolia) that publishes a Grey Zone Score every epoch (~384s), backed by a 3-layer decentralized storage stack and an EigenLayer AVS node. We then propose a utility-theoretic framework — a CAPM adapted for DeFi agents — showing that QUEST-aware behavior emerges as a Nash equilibrium in an agent-dominated economy, without requiring coercive coordination.
 
 ---
 
@@ -130,7 +128,55 @@ The key insight from macroeconomic theory: **systemic risk is a coordination pro
 
 ---
 
-## 6. Current Limitations and Open Questions
+## 6. A CAPM for QUEST-Aware Agents
+
+The adoption problem for any macroprudential signal in a permissionless market is fundamentally an **incentive alignment problem**: a rational protocol operating in isolation has no short-term reason to reduce yield-generating activity in response to a systemic risk signal. The fee revenue foregone is immediate and certain; the avoided loss is probabilistic and shared with the entire ecosystem.
+
+This is the classic free-rider structure — and it is why coercive regulation exists in TradFi. In DeFi, coercion is unavailable. We propose instead a **utility-theoretic framework** that makes QUEST-aware behavior individually rational, not just collectively desirable.
+
+### 6.1 Agent Utility Function
+
+We model a DeFi agent's utility as a mean-variance function over epoch returns:
+
+$$U = E(R) - \frac{\lambda}{2} \cdot \sigma^2(GZS)$$
+
+Where:
+- $E(R)$ = expected return (fees + yield) over the next epoch
+- $\lambda$ = agent-specific risk aversion coefficient
+- $\sigma^2(GZS)$ = systemic variance, parameterized by the Grey Zone Score
+
+The key design choice: $\sigma^2(GZS)$ is not constant. We define it as an increasing function of GZS:
+
+$$\sigma^2(GZS) = \sigma_{base}^2 \cdot e^{k \cdot GZS}$$
+
+In HEALTHY state ($GZS < 0.5$), the exponential term is near 1 — risk is base-level and the agent optimizes normally. As GZS approaches 1.0, systemic variance grows nonlinearly, compressing the utility of any LST-collateralized position regardless of its nominal yield.
+
+No external rule is needed. A well-calibrated $\lambda$ makes the agent reduce exposure organically.
+
+### 6.2 QUEST-Adjusted CAPM
+
+Following Markowitz and Sharpe, we define the **efficient frontier for QUEST-aware agents** in $(E(R), \sigma(GZS))$ space:
+
+$$E(R_a) = R_f + \beta_{GZS} \cdot (E(R_m) - R_f)$$
+
+Where:
+- $R_f$ = base ETH staking yield (consensus layer issuance) — the risk-free rate of the Ethereum economy
+- $\beta_{GZS}$ = the agent's exposure coefficient to systemic slashing risk, derived from its LST-collateralized position size relative to total LST market
+- $E(R_m)$ = aggregate DeFi market return
+
+The indifference curves in $(E(R), \sigma)$ space are the locus of strategies yielding constant utility $U$. When GZS is HEALTHY, the Capital Market Line has a steep slope — high return per unit of risk, agents concentrate in LST positions. When GZS enters GREY_ZONE, the efficient frontier **shifts left**: the same strategies now carry greater systemic variance, and rational agents migrate toward lower-$\beta_{GZS}$ positions.
+
+### 6.3 The Coordination Result
+
+The critical implication: **if agents are designed with GZS-parameterized utility functions from inception, macroprudential coordination emerges as a Nash equilibrium rather than a regulatory imposition.**
+
+An agent economically designed to maximize $U = E(R) - \frac{\lambda}{2} \cdot \sigma^2(GZS)$ will reduce LST exposure when GZS rises — not because it is altruistic, but because the risk-adjusted return no longer clears its utility threshold. When multiple such agents operate simultaneously, their correlated reduction in LST exposure actually dampens the liquidation spiral rather than triggering it, because the exit is gradual and epoch-synchronized rather than panic-driven.
+
+This inverts the free-rider problem: in an agent-dominated economy, **the systemic risk signal becomes a natural input to individual optimization**, not a collective good that requires enforcement.
+
+---
+
+## 7. Current Limitations and Open Questions
 
 **v1 limitations:**
 - Single trusted operator (ECDSA, no cryptoeconomic security). Upgrading to full EigenLayer AVS with BLS multi-operator is Phase 5.
@@ -147,11 +193,11 @@ The key insight from macroeconomic theory: **systemic risk is a coordination pro
 
 4. **MEV-Boost integration:** What is the cleanest way to get per-epoch MEV reward data on-chain without introducing a new trust assumption?
 
-5. **Agent coordination:** If multiple protocols adopt QUEST signals simultaneously, what are the second-order effects? Could synchronized defensive mode activation itself become a systemic risk?
+5. **Agent coordination and utility calibration:** If multiple QUEST-aware agents reduce LST exposure simultaneously, the exit is gradual and epoch-synchronized — which should dampen rather than trigger a liquidation spiral. But this depends critically on the functional form of $\sigma^2(GZS)$ and the distribution of $\lambda$ across agents. What is the empirically appropriate specification? Has the community modeled optimal $\lambda$ distributions for systemic stability?
 
 ---
 
-## 7. Next Steps
+## 8. Next Steps
 
 - **Phase 5 (pending EigenLayer grant):** Full AVS with BLS operators, real MEV-Boost data, on-chain CID publication per epoch.
 - **Phase 6 (pending Lido LEGO):** Per-protocol Grey Zone Scores for Lido, Rocket Pool, EtherFi, Swell, Kelp.
