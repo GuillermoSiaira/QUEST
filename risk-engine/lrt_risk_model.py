@@ -148,10 +148,16 @@ def calculate_grey_zone_score(
     if gross_slashing_loss_eth <= 0.0:
         return 0.0
 
+    # Grey Zone requiere rewards positivos que enmascaren slashings.
+    # cl_rewards negativo implica net rebase negativo → el oráculo de Lido
+    # activa bunker mode de todas formas → no hay bypass posible → score 0.
+    if cl_rewards_eth < 0.0:
+        return 0.0
+
     total_rewards = cl_rewards_eth + mev_rewards_eth
 
     if total_rewards <= 0.0:
-        # Rewards cero con slashings positivos: peor escenario posible
+        # Rewards genuinamente cero con slashings: peor escenario posible
         return float("inf")
 
     return gross_slashing_loss_eth / total_rewards
