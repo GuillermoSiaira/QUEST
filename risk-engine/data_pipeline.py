@@ -39,6 +39,8 @@ ALCHEMY_WS_URL       = os.getenv("ALCHEMY_WS_URL")
 BEACON_API_URL       = os.getenv("BEACON_API_URL", "https://lodestar-mainnet.chainsafe.io")
 POLL_INTERVAL        = int(os.getenv("QUEST_POLL_INTERVAL_SECONDS", 60))
 HTTP_TIMEOUT_SECONDS = int(os.getenv("QUEST_HTTP_TIMEOUT_SECONDS", 30))
+# Max epochs to backfill when a gap is detected (Beacon blip, Cloud Run restart, etc.)
+MAX_BACKFILL_EPOCHS  = int(os.getenv("QUEST_MAX_BACKFILL_EPOCHS", 10))
 
 # Lido stETH contract (Mainnet)
 LIDO_STETH_ADDRESS = "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"
@@ -349,6 +351,10 @@ class QUESTDataPipeline:
         self._prev_validator_count:    int   = 0
         self._last_known_participation: float = 0.9521  # baseline mainnet tipico
 
+        # Cursor del último epoch emitido. Puede sembrarse antes de run()
+        # vía seed_last_epoch() para sobrevivir restarts del servicio.
+        self._last_emitted_epoch: int = -1
+
         self._snapshots: list[EpochSnapshot] = []
         self._callbacks = []
 
@@ -357,11 +363,30 @@ class QUESTDataPipeline:
         self._callbacks.append(callback)
 
     async def _fetch_epoch_snapshot(
-        self, session: aiohttp.ClientSession
+        self,
+        session: aiohttp.ClientSession,
+        target_epoch: Optional[int] = None,
     ) -> Optional[EpochSnapshot]:
+        """
+        Construye un EpochSnapshot.
+
+        Modo head (target_epoch=None): ingesta el epoch actual, calcula rewards
+        como delta vs el epoch anterior persistido en el objeto, y actualiza el
+        baseline interno para el próximo ciclo.
+
+        Modo backfill (target_epoch=N): ingesta el epoch N específico sin
+        calcular rewards (has_rewards_data=False). Los campos de execution
+        layer (block, gas, burned, Lido TVL) son una aproximación con el
+        bloque actual — razonable para backfill de epochs recientes, no
+        preciso para backfill histórico profundo.
+        """
+        is_backfill = target_epoch is not None
         try:
-            # --- Epoch actual (liviano, 1 KB) ---
-            epoch_number = await self.beacon.get_current_epoch(session)
+            # --- Epoch: head (default) o explícito (backfill) ---
+            if target_epoch is None:
+                epoch_number = await self.beacon.get_current_epoch(session)
+            else:
+                epoch_number = target_epoch
 
             # --- Balance total (cacheado por epoch) ---
             current_total_balance = await self.beacon.get_total_balance_gwei(
@@ -369,8 +394,10 @@ class QUESTDataPipeline:
             )
 
             # --- Rewards = delta entre epochs consecutivos ---
+            # En backfill no tenemos el baseline del epoch anterior, así que
+            # dejamos rewards en None y has_rewards_data quedará False abajo.
             epoch_rewards_gwei = None
-            if self._prev_epoch >= 0 and self._prev_total_balance_gwei > 0:
+            if not is_backfill and self._prev_epoch >= 0 and self._prev_total_balance_gwei > 0:
                 if epoch_number > self._prev_epoch:
                     stats           = await self.beacon.get_validator_stats(session, epoch_number)
                     curr_validators = stats["count"]
@@ -387,18 +414,20 @@ class QUESTDataPipeline:
                         )
                         epoch_rewards_gwei = None
 
-            # Solo actualizar el baseline si obtuvimos un balance real.
-            # Si la Beacon API timeouteó y devolvió 0, conservar el valor
-            # anterior para que el delta del próximo epoch sea correcto.
-            if current_total_balance > 0:
-                self._prev_total_balance_gwei = current_total_balance
-            self._prev_epoch = epoch_number
+            # Solo actualizar el baseline si estamos en modo head. Los backfills
+            # no deben mover el cursor _prev_epoch / _prev_total_balance_gwei
+            # porque eso rompería el cálculo de rewards del próximo poll head.
+            if not is_backfill:
+                if current_total_balance > 0:
+                    self._prev_total_balance_gwei = current_total_balance
+                self._prev_epoch = epoch_number
 
             # --- Validator stats (cacheados 50 epochs) ---
             stats                     = await self.beacon.get_validator_stats(session, epoch_number)
             total_validators          = stats["count"]
             total_active_balance_gwei = stats["eligible_balance_gwei"]
-            self._prev_validator_count = total_validators
+            if not is_backfill:
+                self._prev_validator_count = total_validators
 
             # --- Slashings (cacheados, escaneo unico por epoch) ---
             slashed_count         = await self.beacon.get_epoch_slashings(session, epoch_number)
@@ -466,50 +495,98 @@ class QUESTDataPipeline:
             logger.error("Error en _fetch_epoch_snapshot: %s", e, exc_info=True)
             return None
 
+    def seed_last_epoch(self, epoch: int) -> None:
+        """
+        Inicializa el cursor de último epoch emitido desde persistencia externa.
+        Llamar antes de `run()` cuando se restaure un historial previo de DB,
+        para que el gap-detection pueda rellenar huecos que ocurrieron durante
+        el downtime del servicio (Cloud Run scale-to-zero, restart, etc).
+        """
+        if epoch > self._last_emitted_epoch:
+            self._last_emitted_epoch = epoch
+            logger.info("Pipeline cursor sembrado desde DB: last_emitted_epoch=%d", epoch)
+
+    async def _emit_snapshot(self, snapshot: EpochSnapshot, tag: str = "head") -> None:
+        """Persiste un snapshot y dispara los callbacks registrados."""
+        self._snapshots.append(snapshot)
+        rewards_str = (
+            f"{snapshot.epoch_rewards_gwei:,} Gwei"
+            if snapshot.epoch_rewards_gwei is not None
+            else "n/a"
+        )
+        logger.info(
+            "[%s] Epoch %d | rewards=%s | slashings=%d | "
+            "burned=%d Gwei | grey_zone=%s | Lido=%.0f ETH",
+            tag,
+            snapshot.epoch,
+            rewards_str,
+            snapshot.slashed_validators,
+            snapshot.burned_eth_gwei,
+            snapshot.is_grey_zone,
+            snapshot.lido_tvl_eth,
+        )
+        for cb in self._callbacks:
+            await cb(snapshot)
+
     async def run(self):
         """Loop principal del pipeline."""
         logger.info("QUEST Data Pipeline iniciado")
         logger.info("  Beacon API:    %s", BEACON_API_URL)
         logger.info("  Alchemy:       %s", (ALCHEMY_HTTP_URL or "")[:50] + "...")
         logger.info("  Poll interval: %ds", POLL_INTERVAL)
+        logger.info("  Max backfill:  %d epochs", MAX_BACKFILL_EPOCHS)
+        if self._last_emitted_epoch >= 0:
+            logger.info("  Seeded cursor: %d", self._last_emitted_epoch)
 
         # Timeout de sesión generoso — los métodos de BeaconAPIClient definen
         # sus propios timeouts más específicos por endpoint.
         timeout = aiohttp.ClientTimeout(total=300, connect=15)
-        # Sólo emitimos callbacks cuando el epoch avanza. Cada epoch dura ~6.4 min
-        # y el pipeline polls cada 60s: sin este guard, los polls 2-6 del mismo
-        # epoch sobreescriben el snapshot con epoch_rewards_gwei=None (el campo
-        # sólo se calcula en el primer poll del epoch nuevo, cuando hay un delta
-        # de balance vs el epoch anterior).
-        last_emitted_epoch = -1
         async with aiohttp.ClientSession(timeout=timeout) as session:
             while True:
                 snapshot = await self._fetch_epoch_snapshot(session)
                 if snapshot:
-                    if snapshot.epoch != last_emitted_epoch:
-                        last_emitted_epoch = snapshot.epoch
-                        self._snapshots.append(snapshot)
-                        rewards_str = (
-                            f"{snapshot.epoch_rewards_gwei:,} Gwei"
-                            if snapshot.epoch_rewards_gwei is not None
-                            else "calculando..."
+                    head_epoch = snapshot.epoch
+
+                    # Backfill: si hay gap entre el último emitido y el head,
+                    # rellenar los epochs intermedios (bounded por MAX_BACKFILL_EPOCHS).
+                    # Esto arregla gaps producidos por fallas intermitentes del
+                    # Beacon API o por restarts del servicio (Cloud Run).
+                    if self._last_emitted_epoch >= 0 and head_epoch > self._last_emitted_epoch + 1:
+                        gap = head_epoch - self._last_emitted_epoch - 1
+                        start = max(
+                            self._last_emitted_epoch + 1,
+                            head_epoch - MAX_BACKFILL_EPOCHS,
                         )
+                        if gap > MAX_BACKFILL_EPOCHS:
+                            logger.warning(
+                                "Gap de %d epochs excede MAX_BACKFILL_EPOCHS=%d — "
+                                "backfill acotado a últimos %d",
+                                gap, MAX_BACKFILL_EPOCHS, MAX_BACKFILL_EPOCHS,
+                            )
                         logger.info(
-                            "Epoch %d | rewards=%s | slashings=%d | "
-                            "burned=%d Gwei | grey_zone=%s | Lido=%.0f ETH",
-                            snapshot.epoch,
-                            rewards_str,
-                            snapshot.slashed_validators,
-                            snapshot.burned_eth_gwei,
-                            snapshot.is_grey_zone,
-                            snapshot.lido_tvl_eth,
+                            "Gap detectado: last_emitted=%d, head=%d. "
+                            "Backfilleando epochs %d..%d",
+                            self._last_emitted_epoch, head_epoch, start, head_epoch - 1,
                         )
-                        for cb in self._callbacks:
-                            await cb(snapshot)
+                        for missed in range(start, head_epoch):
+                            bf_snap = await self._fetch_epoch_snapshot(
+                                session, target_epoch=missed
+                            )
+                            if bf_snap:
+                                await self._emit_snapshot(bf_snap, tag="backfill")
+                                self._last_emitted_epoch = max(
+                                    self._last_emitted_epoch, bf_snap.epoch
+                                )
+
+                    # Head: emitir sólo cuando el epoch avanza. Los polls 2..6
+                    # del mismo epoch se saltan para no pisar rewards=None.
+                    if head_epoch != self._last_emitted_epoch:
+                        await self._emit_snapshot(snapshot, tag="head")
+                        self._last_emitted_epoch = head_epoch
                     else:
                         logger.debug(
-                            "Poll dentro del mismo epoch %d — sin cambios (rewards preservados)",
-                            snapshot.epoch,
+                            "Poll dentro del mismo epoch %d — sin cambios",
+                            head_epoch,
                         )
 
                 await asyncio.sleep(POLL_INTERVAL)

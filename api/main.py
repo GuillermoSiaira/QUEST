@@ -153,6 +153,14 @@ async def lifespan(app: FastAPI):
     pipeline = QUESTDataPipeline()
     pipeline.on_snapshot(on_new_snapshot)
 
+    # Sembrar cursor desde DB para que el gap-detection del pipeline pueda
+    # rellenar epochs perdidos durante downtime del servicio (Cloud Run
+    # scale-to-zero, restart, etc). Sin esto, cada restart pierde todos los
+    # epochs que pasaron mientras el container estaba dormido.
+    if history:
+        last_persisted = max(s.epoch for s in history)
+        pipeline.seed_last_epoch(last_persisted)
+
     pipeline_task = asyncio.create_task(pipeline.run())
     logger.info("Pipeline iniciado como background task")
 
@@ -203,10 +211,16 @@ async def get_status():
 
 
 @app.get("/api/history", response_model=list[EpochStatus])
-async def get_history(n: int = 50):
-    """Ultimos n snapshots. Max: 200."""
-    n = min(n, MAX_HISTORY)
-    return snapshot_history[-n:]
+async def get_history(n: int = 50, limit: Optional[int] = None):
+    """
+    Ultimos N snapshots. Max: MAX_HISTORY.
+
+    Acepta `?limit=N` o `?n=N` (el primero tiene precedencia si ambos
+    están presentes). Alias `limit` para coherencia con APIs REST comunes.
+    """
+    count = limit if limit is not None else n
+    count = max(1, min(count, MAX_HISTORY))
+    return snapshot_history[-count:]
 
 
 @app.get("/api/epoch/{epoch_number}", response_model=EpochStatus)
