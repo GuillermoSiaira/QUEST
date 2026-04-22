@@ -77,11 +77,12 @@ function StatRow({
 
 function computeAgentState(gzs: number, lambda: number): AgentState {
   const sigmaBase = 0.05;
-  const k = 9.0;
-  // calibrated so: exposure(GZS=0)=90%, exposure(GZS=0.5)≈45%, exposure(GZS=1.0)=0%
+  const k = Math.log(10); // ≈ 2.302585 — calibrated for exp form
+  // calibrated so: exposure(GZS=0)=90%, exposure(GZS=1.0)=0%
+  // under exp form, exposure(GZS=0.5)≈68% (convexity near the threshold)
   const expectedReturn = 10 * (lambda / 2) * sigmaBase * sigmaBase;
 
-  const sigmaSquared = sigmaBase * sigmaBase * (1 + k * gzs);
+  const sigmaSquared = sigmaBase * sigmaBase * Math.exp(k * gzs);
   const riskTerm = (lambda / 2) * sigmaSquared;
   const utility = expectedReturn - riskTerm;
 
@@ -125,7 +126,7 @@ export function AgentPanel({ gzs = 0.12, preview = false }: Props) {
       <div className="px-6 pb-4">
         <StatRow
           label="Utility  U"
-          sub="E(R) − (λ/2)·σ²(GZS)"
+          sub="E(R) − (λ/2)·σ²·exp(k·GZS)"
           value={utilityDisplay}
           highlight={!utilityPositive}
         />

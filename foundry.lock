@@ -4,5 +4,11 @@
       "name": "v1.15.0",
       "rev": "0844d7e1fc5e60d77b68e469bff60265f236c398"
     }
+  },
+  "lib\\prb-math": {
+    "tag": {
+      "name": "v4.1.1",
+      "rev": "b51e8631ed28d3cc917c491dd47cd6c3ff652edc"
+    }
   }
 }
