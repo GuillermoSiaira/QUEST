@@ -1,6 +1,6 @@
 # QUEST: A Macroprudential Oracle for Ethereum's Consensus Layer
 
-**TL;DR:** We identify a structural gap in Lido's `safe_border.py` where slashing debt accumulates silently while MEV rewards mask technical insolvency. We call this the *Grey Zone*. QUEST is a live oracle (Sepolia) that publishes a Grey Zone Score every epoch (~384s), backed by a 3-layer decentralized storage stack and an EigenLayer AVS node. We then propose a utility-theoretic framework — a CAPM adapted for DeFi agents — showing that QUEST-aware behavior emerges as a Nash equilibrium in an agent-dominated economy, without requiring coercive coordination.
+**TL;DR:** We identify a structural gap in Lido's `safe_border.py` where slashing debt accumulates silently while MEV rewards mask technical insolvency. We call this the *Grey Zone*. QUEST is a live oracle (Sepolia) that publishes a Grey Zone Score every epoch (~384s), backed by a 3-layer decentralized storage stack and an EigenLayer AVS node. We then propose a **mean-variance utility framework** for DeFi agents — with a CAPM-style efficient frontier as its geometric interpretation — showing that QUEST-aware behavior is individually rational (and, under a simple two-agent model, a Nash equilibrium) in an agent-dominated economy, without requiring coercive coordination.
 
 ---
 
@@ -128,7 +128,7 @@ The key insight from macroeconomic theory: **systemic risk is a coordination pro
 
 ---
 
-## 6. A CAPM for QUEST-Aware Agents
+## 6. A Mean-Variance Utility Framework for QUEST-Aware Agents
 
 The adoption problem for any macroprudential signal in a permissionless market is fundamentally an **incentive alignment problem**: a rational protocol operating in isolation has no short-term reason to reduce yield-generating activity in response to a systemic risk signal. The fee revenue foregone is immediate and certain; the avoided loss is probabilistic and shared with the entire ecosystem.
 
@@ -145,34 +145,53 @@ Where:
 - $\lambda$ = agent-specific risk aversion coefficient
 - $\sigma^2(GZS)$ = systemic variance, parameterized by the Grey Zone Score
 
-The key design choice: $\sigma^2(GZS)$ is not constant. We define it as an increasing function of GZS:
+The key design choice: $\sigma^2(GZS)$ is not constant. We define it as an exponentially increasing function of GZS, so that systemic variance accelerates non-linearly as the Grey Zone threshold is approached:
 
 $$\sigma^2(GZS) = \sigma_{base}^2 \cdot e^{k \cdot GZS}$$
 
-In HEALTHY state ($GZS < 0.5$), the exponential term is near 1 — risk is base-level and the agent optimizes normally. As GZS approaches 1.0, systemic variance grows nonlinearly, compressing the utility of any LST-collateralized position regardless of its nominal yield.
+This functional form encodes the economic intuition that systemic risk is not a linear accumulation of losses — it is a regime shift. Near GZS = 1.0, small additional deterioration in the slashing/rewards ratio produces disproportionately large increases in effective variance, reflecting the tail-risk structure of cascading liquidations. A linear specification would systematically underweight this tail.
+
+The implementation in [`QUESTAgent.sol`](https://github.com/GuillermoSiaira/QUEST/blob/main/contracts/QUESTAgent.sol) uses PRBMath's UD60x18 fixed-point `exp()` primitive, so the on-chain utility function matches the specification exactly.
+
+**Reference calibration** (used in the live dashboard and in the unit test suite): $\sigma_{base} = 0.05$, $k = \ln(10) \approx 2.303$, $\lambda = 0.6$, $E(R) = 10 \cdot \frac{\lambda}{2}\sigma_{base}^2 = 0.0075$. These parameters yield:
+
+| GZS | Exposure |
+|-----|----------|
+| 0.0 | 90% |
+| 0.5 | ~68% |
+| 0.7 | ~50% |
+| 1.0 | 0% |
+
+Note that with the exponential form, the 50% exposure point lands near GZS ≈ 0.7 rather than at the midpoint 0.5 — consistent with the paper's narrative that the efficient frontier shifts sharply as the system approaches the CRITICAL threshold. These values are illustrative, not empirically fitted — optimal calibration across heterogeneous agents is an open question (§7 Q5).
 
 No external rule is needed. A well-calibrated $\lambda$ makes the agent reduce exposure organically.
 
-### 6.2 QUEST-Adjusted CAPM
+### 6.2 A CAPM-Style Efficient Frontier
 
-Following Markowitz and Sharpe, we define the **efficient frontier for QUEST-aware agents** in $(E(R), \sigma(GZS))$ space:
+Following Markowitz and Sharpe, we can project the framework into a familiar geometric form. We define the **efficient frontier for QUEST-aware agents** in $(E(R), \sigma(GZS))$ space:
 
 $$E(R_a) = R_f + \beta_{GZS} \cdot (E(R_m) - R_f)$$
 
 Where:
 - $R_f$ = base ETH staking yield (consensus layer issuance) — the risk-free rate of the Ethereum economy
-- $\beta_{GZS}$ = the agent's exposure coefficient to systemic slashing risk, derived from its LST-collateralized position size relative to total LST market
+- $\beta_{GZS}$ = the agent's systemic-risk exposure coefficient, equal to the exposure ratio scaled by a market-wide $\beta_{max}$
 - $E(R_m)$ = aggregate DeFi market return
 
-The indifference curves in $(E(R), \sigma)$ space are the locus of strategies yielding constant utility $U$. When GZS is HEALTHY, the Capital Market Line has a steep slope — high return per unit of risk, agents concentrate in LST positions. When GZS enters GREY_ZONE, the efficient frontier **shifts left**: the same strategies now carry greater systemic variance, and rational agents migrate toward lower-$\beta_{GZS}$ positions.
+We note explicitly that $\beta_{GZS}$ here is a **design parameter derived from the agent's chosen exposure**, not a statistical covariance estimated from market data as in canonical CAPM. The CAPM framing is used for its geometric intuition — efficient frontier, indifference curves, Capital Market Line — not as a claim that $\beta_{GZS}$ is an empirically measured quantity.
+
+The indifference curves in $(E(R), \sigma)$ space are the locus of strategies yielding constant utility $U$. When GZS is HEALTHY, the CML has a steep slope — high return per unit of risk, agents concentrate in LST positions. When GZS enters GREY_ZONE, the efficient frontier **shifts left**: the same strategies now carry greater systemic variance, and rational agents migrate toward lower-$\beta_{GZS}$ positions.
 
 ### 6.3 The Coordination Result
 
-The critical implication: **if agents are designed with GZS-parameterized utility functions from inception, macroprudential coordination emerges as a Nash equilibrium rather than a regulatory imposition.**
+The critical implication: **if agents are designed with GZS-parameterized utility functions, macroprudential coordination is individually rational, not a collective good requiring enforcement.**
 
-An agent economically designed to maximize $U = E(R) - \frac{\lambda}{2} \cdot \sigma^2(GZS)$ will reduce LST exposure when GZS rises — not because it is altruistic, but because the risk-adjusted return no longer clears its utility threshold. When multiple such agents operate simultaneously, their correlated reduction in LST exposure actually dampens the liquidation spiral rather than triggering it, because the exit is gradual and epoch-synchronized rather than panic-driven.
+**Individual rationality (single-agent case).** An agent maximizing $U = E(R) - \frac{\lambda}{2}\sigma^2(GZS)$ with $\sigma^2$ monotonic in GZS will, by construction, reduce exposure as GZS rises. At the point where $\frac{\lambda}{2}\sigma^2(GZS) \geq E(R)$, utility becomes non-positive and the optimal exposure is zero. No external rule is invoked; the agent's own utility function is the policy. This is a tautology of the design — but a useful one, because it removes the coordination problem at the level of the individual agent.
 
-This inverts the free-rider problem: in an agent-dominated economy, **the systemic risk signal becomes a natural input to individual optimization**, not a collective good that requires enforcement.
+**Two-agent symmetric game (informal Nash sketch).** Consider two QUEST-aware agents $A, B$ with identical $(\lambda, \sigma_{base}, k, E(R))$ and strategies $s_i \in \{\text{reduce}, \text{maintain}\}$ at a GZS above each one's individual threshold. Let $c$ be the foregone-yield cost of reducing exposure and $d$ the expected loss from a cascading liquidation conditional on at least one agent maintaining exposure. By construction of the utility function at GZS above threshold, we have $c < d$ for each agent (otherwise the threshold would be higher). Each agent's best response to the other's strategy is therefore `reduce`, regardless of what the other does — `reduce` strictly dominates `maintain`. The symmetric $(\text{reduce}, \text{reduce})$ profile is thus a Nash equilibrium, and the only one that survives iterated deletion of dominated strategies.
+
+This is deliberately a minimal model. With heterogeneous $\lambda$, partial information, or correlated exit dynamics the picture becomes richer, and we do not claim to have resolved those cases — see §7 Q5.
+
+**Inverted free-rider structure.** In an agent-dominated economy where utility functions are GZS-parameterized at design time, the systemic risk signal becomes a natural input to individual optimization. The free-rider problem that motivates coercive regulation in TradFi does not arise in the same form, because "reducing exposure when GZS is high" is the dominant strategy rather than a costly public-good contribution.
 
 ---
 

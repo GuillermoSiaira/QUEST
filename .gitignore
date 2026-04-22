@@ -1,5 +1,6 @@
 # API Keys y secretos - NUNCA commitear
 *.txt
+!remappings.txt
 .env
 .env.local
 .env.*

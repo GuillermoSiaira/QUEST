@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./interfaces/IERC8004QuestAware.sol";
+import { UD60x18, ud, exp, ln } from "@prb/math/UD60x18.sol";
 
 /**
  * @title QUESTAgent
@@ -13,9 +14,12 @@ import "./interfaces/IERC8004QuestAware.sol";
  *
  *   U = E(R) - (lambda / 2) * sigma²(GZS)
  *
- * Systemic variance increases with GZS (quadratic convexity):
+ * Systemic variance grows exponentially with GZS, capturing non-linear
+ * tail-risk behavior near the Grey Zone threshold:
  *
- *   sigma²(GZS) = sigmaBase² * (1e18 + k * GZS) / 1e18
+ *   sigma²(GZS) = sigmaBase² * exp(k * GZS)
+ *
+ * Implemented via PRBMath UD60x18 fixed-point arithmetic.
  *
  * Exposure ratio (fraction of capital deployed in LST positions):
  *
@@ -25,11 +29,12 @@ import "./interfaces/IERC8004QuestAware.sol";
  * As GZS rises, variance grows, utility compresses, exposure falls.
  * No external rule required — the utility function is the policy.
  *
- * QUEST-adjusted CAPM:
+ * Mean-variance efficient frontier (CAPM-style geometric interpretation):
  *
  *   E(Ra) = Rf + betaGZS * (E(Rm) - Rf)
  *
- * betaGZS is updated each epoch as exposureRatio * maxBeta.
+ * betaGZS is a design parameter, updated each epoch as
+ * exposureRatio * maxBeta — not a statistical covariance estimate.
  */
 contract QUESTAgent is IERC8004QuestAware {
 
@@ -44,8 +49,14 @@ contract QUESTAgent is IERC8004QuestAware {
     /// @notice Base standard deviation σ_base ∈ [0, 1e18].
     uint256 public sigmaBase;
 
-    /// @notice Convexity multiplier k ∈ [0, 1e18]. Controls how fast variance grows with GZS.
+    /// @notice Convexity multiplier k (scaled 1e18). Controls how fast variance
+    ///         grows with GZS under sigma²(GZS) = sigmaBase² * exp(k * GZS).
+    ///         Bounded to 1e19 (i.e. k ≤ 10) so that k * GZS stays well below
+    ///         PRBMath's exp input cap (~133e18).
     uint256 public k;
+
+    /// @notice Upper bound for k, enforced by constructor and setter.
+    uint256 public constant K_MAX = 1e19;
 
     /// @notice Expected return per epoch E(R) ∈ [0, 1e18].
     uint256 public expectedReturn;
@@ -97,6 +108,7 @@ contract QUESTAgent is IERC8004QuestAware {
         require(_lambda     <= 1e18,      "QUESTAgent: lambda > 1");
         require(_sigmaBase  <= 1e18,      "QUESTAgent: sigmaBase > 1");
         require(_maxBeta    <= 1e18,      "QUESTAgent: maxBeta > 1");
+        require(_k          <= K_MAX,     "QUESTAgent: k > K_MAX");
 
         owner          = msg.sender;
         questCore      = _questCore;
@@ -136,11 +148,22 @@ contract QUESTAgent is IERC8004QuestAware {
 
     function getRiskTolerance() external view override returns (uint256) {
         // Risk tolerance expressed as the GZS at which exposure drops to 50%.
-        // Derived analytically from the utility function parameters.
-        if (lambda == 0 || sigmaBase == 0) return 1e18;
-        uint256 halfPoint = expectedReturn * 1e18 / (lambda * sigmaBase * sigmaBase / 1e18);
-        if (halfPoint <= 1e18) return 0;
-        return (halfPoint - 1e18) * 1e18 / k;
+        //
+        // exposure = U / E(R) = 1 - (lambda/2) * sigmaBase² * exp(k * GZS) / E(R)
+        //
+        // Setting exposure = 0.5 and solving:
+        //   exp(k * GZS) = E(R) / (lambda * sigmaBase²)
+        //   GZS         = ln(E(R) / (lambda * sigmaBase²)) / k
+        if (lambda == 0 || sigmaBase == 0 || k == 0) return 1e18;
+
+        // denom = lambda * sigmaBase² (scaled 1e18)
+        uint256 denom = lambda * sigmaBase / 1e18 * sigmaBase / 1e18;
+        if (denom == 0 || expectedReturn <= denom) return 0;
+
+        // ratio (scaled 1e18) > 1e18 guaranteed by the check above
+        uint256 ratio = expectedReturn * 1e18 / denom;
+        UD60x18 lnRatio = ln(ud(ratio));
+        return lnRatio.unwrap() * 1e18 / k;
     }
 
     function getQUESTReputation() external view override returns (uint256) {
@@ -156,16 +179,26 @@ contract QUESTAgent is IERC8004QuestAware {
     /**
      * @notice Computes agent utility given current GZS.
      *
-     *   sigma²(GZS) = sigmaBase² * (1e18 + k * GZS) / 1e18
-     *   U = E(R) - (lambda / 2) * sigma²(GZS)
+     *   sigma²(GZS) = sigmaBase² * exp(k * GZS)
+     *   U          = E(R) - (lambda / 2) * sigma²(GZS)
      *
      * Returns signed integer (negative = agent should fully exit).
+     *
+     * All intermediate fixed-point values are UD60x18 (1e18 scaled).
+     * k * gzs is bounded by K_MAX (1e19) * 1e18 / 1e18 = 1e19, well below
+     * PRBMath's exp input cap (~133e18), so no revert path in normal use.
      */
     function computeUtility(uint256 gzs) public view returns (int256) {
-        // multiply before divide to avoid precision loss
-        uint256 sigmaSquared = sigmaBase * sigmaBase
-                             * (1e18 + k * gzs / 1e18)
-                             / 1e36;
+        // exponent = k * gzs / 1e18, scaled 1e18
+        uint256 exponent = k * gzs / 1e18;
+        // exp(exponent), scaled 1e18
+        uint256 expTerm  = exp(ud(exponent)).unwrap();
+
+        // sigma² = sigmaBase² * exp(k * gzs), scaled 1e18
+        // multiply in stages to avoid overflow: sigmaBase ≤ 1e18
+        uint256 sigmaSquared = sigmaBase * sigmaBase / 1e18 * expTerm / 1e18;
+
+        // riskTerm = (lambda / 2) * sigma², scaled 1e18
         uint256 riskTerm = lambda * sigmaSquared / 2 / 1e18;
 
         if (expectedReturn >= riskTerm) {
@@ -216,6 +249,7 @@ contract QUESTAgent is IERC8004QuestAware {
 
     function setK(uint256 _k) external {
         require(msg.sender == owner, "QUESTAgent: not owner");
+        require(_k <= K_MAX,         "QUESTAgent: k > K_MAX");
         k = _k;
     }
 
