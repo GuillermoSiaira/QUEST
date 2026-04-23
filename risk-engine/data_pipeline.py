@@ -16,6 +16,7 @@ El snapshot alimenta lrt_risk_model y la API REST/WebSocket.
 """
 
 import os
+import re
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -154,7 +155,7 @@ class BeaconAPIClient:
         url = f"{self.base_url}/eth/v1/beacon/states/head/validator_balances"
 
         try:
-            timeout = aiohttp.ClientTimeout(total=120, connect=15)
+            timeout = aiohttp.ClientTimeout(total=150, connect=15)
             async with session.get(url, timeout=timeout) as resp:
                 if resp.status in (404, 503):
                     logger.warning(
@@ -163,14 +164,17 @@ class BeaconAPIClient:
                     )
                     return self._balance_cache.get(epoch - 1, 0)
                 resp.raise_for_status()
-                data = await resp.json()
+                # Parsear como texto + regex para evitar construir 2.2M dicts Python
+                # (~350 MB de heap) — el string de 15 MB es suficiente para sumar.
+                text = await resp.text()
 
-            total = sum(int(v["balance"]) for v in data.get("data", []))
+            total = sum(int(m) for m in re.findall(rb'"balance":"(\d+)"', text.encode()))
             self._balance_cache[epoch] = total
 
             for old in [e for e in list(self._balance_cache) if e < epoch - 5]:
                 del self._balance_cache[old]
 
+            logger.info("validator_balances epoch %d: total=%.2f M ETH", epoch, total / 1e18)
             return total
 
         except asyncio.TimeoutError:
@@ -203,20 +207,21 @@ class BeaconAPIClient:
                         "eligible_balance_gwei": _BASELINE_ELIGIBLE_ETH_GWEI,
                     }
                 resp.raise_for_status()
-                data = await resp.json()
+                # Contar ocurrencias de "active_ongoing" en texto plano —
+                # evita parsear ~50 MB de JSON en dicts Python.
+                # Pre-Electra: effective_balance = 32 ETH exacto para todos.
+                text = await resp.text()
 
-            validators = data.get("data", [])
+            count = text.count('"active_ongoing"')
             self._stats_cache = {
-                "count":                 len(validators),
-                "eligible_balance_gwei": sum(
-                    int(v["validator"]["effective_balance"]) for v in validators
-                ),
+                "count":                 count,
+                "eligible_balance_gwei": count * 32 * 10**9,
             }
             self._stats_cache_epoch = epoch
             logger.info(
                 "Validator stats actualizados: %d activos, %.0f M ETH elegible",
-                self._stats_cache["count"],
-                self._stats_cache["eligible_balance_gwei"] / 1e18,
+                count,
+                count * 32 / 1000,
             )
 
         except asyncio.TimeoutError:
