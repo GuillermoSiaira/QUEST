@@ -110,7 +110,7 @@ export function AgentPanel({ gzs = 0.12, preview = false }: Props) {
     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
       <div className="px-6 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
-          QUEST Agent — CAPM State
+          QUEST Agent — Mean-Variance State
         </h3>
         {preview && (
           <span className="text-[10px] text-zinc-400 border border-zinc-200 dark:border-zinc-700 rounded px-1.5 py-0.5">
