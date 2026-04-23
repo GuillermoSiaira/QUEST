@@ -167,7 +167,7 @@ function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
               background: "#18181b",
               color: "#e4e4e7",
             }}
-            formatter={(v: number) => [`${v.toFixed(1)}%`, "Exposure"]}
+            formatter={(v) => [`${(Number(v) || 0).toFixed(1)}%`, "Exposure"]}
             labelFormatter={(l) => `GZS = ${Number(l).toFixed(3)}`}
           />
           <ReferenceLine
@@ -191,7 +191,6 @@ function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
             fill="#10b981"
             stroke="#fff"
             strokeWidth={1.5}
-            isFront
           />
         </LineChart>
       </ResponsiveContainer>
