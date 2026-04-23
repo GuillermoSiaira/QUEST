@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 import aiohttp
-from web3 import Web3
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -272,50 +271,63 @@ class BeaconAPIClient:
 
 
 # ---------------------------------------------------------------------------
-# Cliente Alchemy (sin cambios respecto a version anterior)
+# Cliente Alchemy — JSON-RPC puro via aiohttp (sin web3.py)
 # ---------------------------------------------------------------------------
 
 class AlchemyClient:
-    """Cliente para Alchemy (Execution Layer via web3.py)."""
+    """
+    Cliente para Alchemy (Execution Layer) — JSON-RPC directo via aiohttp.
+    Elimina la dependencia de web3.py (~800 MB RAM) reemplazándola con
+    llamadas JSON-RPC crudas usando la sesión aiohttp del pipeline.
+    """
+
+    # keccak256("getTotalPooledEther()")[:4]
+    # Verificable: etherscan.io/address/0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84
+    _SELECTOR_GET_TOTAL_POOLED = "0x09eef3a2"
 
     def __init__(self, http_url: str):
-        self.w3 = Web3(Web3.HTTPProvider(
-            http_url,
-            request_kwargs={"timeout": HTTP_TIMEOUT_SECONDS},
-        ))
-        if not self.w3.is_connected():
-            raise ConnectionError(f"No se pudo conectar a Alchemy: {http_url}")
-        logger.info("Alchemy conectado. Bloque actual: %d", self.w3.eth.block_number)
+        if not http_url:
+            raise ValueError("ALCHEMY_HTTP_URL no configurado. Revisar .env")
+        self.http_url = http_url
+        logger.info("AlchemyClient inicializado: %s", http_url[:50])
 
-    def get_latest_block(self) -> dict:
-        block = self.w3.eth.get_block("latest")
+    async def _rpc(
+        self,
+        session: aiohttp.ClientSession,
+        method: str,
+        params: list,
+    ) -> object:
+        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
+        async with session.post(self.http_url, json=payload, timeout=timeout) as resp:
+            data = await resp.json(content_type=None)
+        if "error" in data:
+            raise RuntimeError(f"Alchemy RPC error [{method}]: {data['error']}")
+        return data["result"]
+
+    async def get_latest_block(self, session: aiohttp.ClientSession) -> dict:
+        r = await self._rpc(session, "eth_getBlockByNumber", ["latest", False])
         return {
-            "number":           block["number"],
-            "timestamp":        block["timestamp"],
-            "base_fee_per_gas": block.get("baseFeePerGas", 0),
-            "gas_used":         block["gasUsed"],
-            "gas_limit":        block["gasLimit"],
+            "number":           int(r["number"], 16),
+            "timestamp":        int(r["timestamp"], 16),
+            "base_fee_per_gas": int(r.get("baseFeePerGas", "0x0"), 16),
+            "gas_used":         int(r["gasUsed"], 16),
+            "gas_limit":        int(r["gasLimit"], 16),
         }
 
-    def get_gas_price_gwei(self) -> float:
-        return float(self.w3.from_wei(self.w3.eth.gas_price, "gwei"))
+    async def get_gas_price_gwei(self, session: aiohttp.ClientSession) -> float:
+        result = await self._rpc(session, "eth_gasPrice", [])
+        return int(result, 16) / 1e9
 
-    def get_lido_tvl_eth(self) -> float:
+    async def get_lido_tvl_eth(self, session: aiohttp.ClientSession) -> float:
         """ETH total stakeado en Lido via getTotalPooledEther()."""
         try:
-            abi = [{
-                "inputs":  [],
-                "name":    "getTotalPooledEther",
-                "outputs": [{"type": "uint256"}],
-                "stateMutability": "view",
-                "type":    "function",
-            }]
-            contract = self.w3.eth.contract(
-                address=Web3.to_checksum_address(LIDO_STETH_ADDRESS),
-                abi=abi,
-            )
-            total_pooled = contract.functions.getTotalPooledEther().call()
-            return float(self.w3.from_wei(total_pooled, "ether"))
+            result = await self._rpc(session, "eth_call", [
+                {"to": LIDO_STETH_ADDRESS, "data": self._SELECTOR_GET_TOTAL_POOLED},
+                "latest",
+            ])
+            # resultado: uint256 de 32 bytes en hex → convertir a ETH
+            return int(result, 16) / 1e18
         except Exception as e:
             logger.warning("Error obteniendo Lido TVL: %s", e)
             return 0.0
@@ -448,11 +460,11 @@ class QUESTDataPipeline:
             slashing_penalty_gwei = slashed_count * (32 * 10**9 // 32)
 
             # --- Execution Layer ---
-            block           = self.alchemy.get_latest_block()
-            gas_price_gwei  = self.alchemy.get_gas_price_gwei()
+            block           = await self.alchemy.get_latest_block(session)
+            gas_price_gwei  = await self.alchemy.get_gas_price_gwei(session)
             base_fee        = block["base_fee_per_gas"]
             burned_eth_gwei = int(base_fee * block["gas_used"] / 10**9)
-            lido_tvl        = self.alchemy.get_lido_tvl_eth()
+            lido_tvl        = await self.alchemy.get_lido_tvl_eth(session)
 
             # Sanity check: descarta rewards negativos si la magnitud no es explicable
             # por los slashings del epoch. Con N slashings la pérdida máxima de
