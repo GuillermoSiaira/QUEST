@@ -396,9 +396,17 @@ class QUESTDataPipeline:
             # --- Rewards = delta entre epochs consecutivos ---
             # En backfill no tenemos el baseline del epoch anterior, así que
             # dejamos rewards en None y has_rewards_data quedará False abajo.
+            #
+            # En head: solo computamos rewards si gap == 1. Si gap > 1 (ej: el
+            # pipeline estuvo caído o lento, o la gap-detection backfilleó varios
+            # epochs), `_prev_total_balance_gwei` es de hace N epochs. El delta
+            # acumula N × rewards-por-epoch e infla net_rebase por un factor N.
+            # Preferimos devolver None y recomputar bien en el siguiente poll
+            # consecutivo, a publicar un número inflado.
             epoch_rewards_gwei = None
             if not is_backfill and self._prev_epoch >= 0 and self._prev_total_balance_gwei > 0:
-                if epoch_number > self._prev_epoch:
+                gap = epoch_number - self._prev_epoch
+                if gap == 1:
                     stats           = await self.beacon.get_validator_stats(session, epoch_number)
                     curr_validators = stats["count"]
                     new_validators  = max(0, curr_validators - self._prev_validator_count)
@@ -413,6 +421,12 @@ class QUESTDataPipeline:
                             epoch_rewards_gwei,
                         )
                         epoch_rewards_gwei = None
+                elif gap > 1:
+                    logger.info(
+                        "Epoch %d: gap de %d epochs desde prev_epoch=%d — rewards=None "
+                        "para este poll; se recomputa en el próximo consecutivo",
+                        epoch_number, gap, self._prev_epoch,
+                    )
 
             # Solo actualizar el baseline si estamos en modo head. Los backfills
             # no deben mover el cursor _prev_epoch / _prev_total_balance_gwei
@@ -453,6 +467,20 @@ class QUESTDataPipeline:
                         epoch_rewards_gwei, slashed_count, max_plausible_loss_gwei,
                     )
                     epoch_rewards_gwei = None
+
+            # Upper-bound sanity: per-epoch network rewards rondan ~15-25 ETH
+            # (38M ETH × 4% APY / 82k epochs/año ≈ 18 ETH/epoch). Un delta mayor
+            # a 100 ETH en un solo epoch indica un gap accumulation que se nos
+            # escapó o corrupción de balance — preferible None a un número absurdo.
+            MAX_PLAUSIBLE_REWARDS_GWEI = 100 * 10**9  # 100 ETH
+            if epoch_rewards_gwei is not None and epoch_rewards_gwei > MAX_PLAUSIBLE_REWARDS_GWEI:
+                logger.warning(
+                    "epoch_rewards_gwei=%d (=%d ETH) descartado — excede %d ETH, "
+                    "probable gap accumulation",
+                    epoch_rewards_gwei, epoch_rewards_gwei // 10**9,
+                    MAX_PLAUSIBLE_REWARDS_GWEI // 10**9,
+                )
+                epoch_rewards_gwei = None
 
             # --- Campos calculados ---
             if epoch_rewards_gwei is not None:

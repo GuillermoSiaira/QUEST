@@ -1,6 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  ReferenceLine,
+  ReferenceDot,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 interface AgentState {
   exposureRatio: number;  // 0–1
@@ -96,6 +107,101 @@ function computeAgentState(gzs: number, lambda: number): AgentState {
   return { exposureRatio, betaGZS, utility, gzs, lambda };
 }
 
+/**
+ * Mini-chart of exposure(GZS) from 0 to 1 with a marker at the current GZS.
+ * Samples the curve at 41 points (step 0.025) — enough for smoothness without
+ * overwhelming the render path.
+ */
+function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
+  const data = useMemo(() => {
+    const points: { gzs: number; exposure: number }[] = [];
+    for (let g = 0; g <= 1.0001; g += 0.025) {
+      const clamped = Math.min(1, g);
+      const { exposureRatio } = computeAgentState(clamped, lambda);
+      points.push({
+        gzs: Number(clamped.toFixed(3)),
+        exposure: Number((exposureRatio * 100).toFixed(2)),
+      });
+    }
+    return points;
+  }, [lambda]);
+
+  const currentExposure = computeAgentState(Math.min(1, gzs), lambda).exposureRatio * 100;
+  const currentGzs = Math.min(1, Math.max(0, gzs));
+
+  const nowLabel = `Now: ${currentExposure.toFixed(0)}%`;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between items-baseline">
+        <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">
+          LST Allocation vs Macro Risk
+        </span>
+        <span className="text-[10px] text-zinc-400 dark:text-zinc-600">
+          % portfolio in LSTs · shrinks as GZS rises
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 14 }}>
+          <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+          <XAxis
+            dataKey="gzs"
+            type="number"
+            domain={[0, 1]}
+            ticks={[0, 0.25, 0.5, 0.75, 1]}
+            tick={{ fontSize: 9, fill: "#71717a" }}
+            tickLine={false}
+            axisLine={false}
+            label={{ value: "Grey Zone Score →", position: "insideBottomRight", offset: -4, fontSize: 9, fill: "#52525b" }}
+          />
+          <YAxis
+            domain={[0, 100]}
+            ticks={[0, 50, 100]}
+            tick={{ fontSize: 9, fill: "#71717a" }}
+            tickLine={false}
+            axisLine={false}
+            unit="%"
+          />
+          <Tooltip
+            contentStyle={{
+              fontSize: 10,
+              borderRadius: 6,
+              border: "1px solid #3f3f46",
+              background: "#18181b",
+              color: "#e4e4e7",
+            }}
+            formatter={(v) => [`${(Number(v) || 0).toFixed(1)}%`, "LST Allocation"]}
+            labelFormatter={(l) => `GZS = ${Number(l).toFixed(3)}`}
+          />
+          <ReferenceLine
+            x={0.5}
+            stroke="#f59e0b"
+            strokeDasharray="3 2"
+            label={{ value: "threshold", fontSize: 8, fill: "#f59e0b", position: "insideTopRight" }}
+          />
+          <Line
+            type="monotone"
+            dataKey="exposure"
+            stroke="#6366f1"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+          <ReferenceDot
+            x={currentGzs}
+            y={currentExposure}
+            r={4}
+            fill="#10b981"
+            stroke="#fff"
+            strokeWidth={1.5}
+            label={{ value: nowLabel, position: "top", fontSize: 9, fill: "#10b981" }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export function AgentPanel({ gzs = 0.12, preview = false }: Props) {
   const lambda = 0.6;
   const agent = useMemo(() => computeAgentState(gzs, lambda), [gzs]);
@@ -121,6 +227,10 @@ export function AgentPanel({ gzs = 0.12, preview = false }: Props) {
 
       <div className="px-6 pt-5 pb-3">
         <ExposureGauge value={agent.exposureRatio} />
+      </div>
+
+      <div className="px-6 pb-3">
+        <ExposureCurve gzs={gzs} lambda={lambda} />
       </div>
 
       <div className="px-6 pb-4">

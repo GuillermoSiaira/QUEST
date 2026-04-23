@@ -118,12 +118,12 @@ def calculate_gross_slashing_loss(
 def calculate_grey_zone_score(
     gross_slashing_loss_eth: float,
     cl_rewards_eth: float,
-    mev_rewards_eth: float,
+    el_activity_proxy_eth: float,
 ) -> float:
     """
     Calcula el Grey Zone Score para un protocolo en un epoch dado.
 
-    Grey Zone Score = gross_slashing_loss / (cl_rewards + mev_rewards)
+    Grey Zone Score = gross_slashing_loss / (cl_rewards + el_activity_proxy)
 
     Este ratio captura el escenario exacto del bug de Lido Oracle:
     cuando el denominador (rewards) es mayor que el numerador (perdidas),
@@ -133,12 +133,26 @@ def calculate_grey_zone_score(
     Interpretacion:
         < 0.5       -> HEALTHY: estado normal
         0.5 a 1.0   -> GREY_ZONE: riesgo latente, safe_border.py bypass posible
-        >= 1.0      -> CRITICAL: perdidas superan rewards incluso con MEV
+        >= 1.0      -> CRITICAL: perdidas superan rewards CL + actividad EL
+
+    Sobre el tercer argumento `el_activity_proxy_eth`:
+        En v1 usamos `burned_eth_gwei` (EIP-1559 base fee) como proxy de la
+        actividad económica del Execution Layer. Técnicamente, el burn NO
+        va al validador — se destruye. El MEV real (priority fees + MEV-boost)
+        sí va al validador, pero requiere integración con flashbots/mev-boost
+        (trabajo de v2). Usamos burned_eth como señal correlacionada:
+        periodos de alta actividad EL tienen alto burn Y alto MEV.
+
+        En la práctica, este proxy puede subestimar o sobreestimar el MEV
+        real por un factor ~1-3x. Para el uso macroprudencial (detectar
+        Grey Zone en orden de magnitud), es suficiente. Para agentes que
+        trading sobre el GZS sería inadecuado.
 
     Args:
         gross_slashing_loss_eth: perdida bruta por slashings en ETH
         cl_rewards_eth:          rewards del consensus layer en el epoch (ETH)
-        mev_rewards_eth:         MEV + priority fees del execution layer (ETH)
+        el_activity_proxy_eth:   proxy de actividad del execution layer;
+                                 en v1 = burned_eth (EIP-1559). No es MEV directo.
 
     Returns:
         Grey Zone Score en [0, inf), float
@@ -154,7 +168,7 @@ def calculate_grey_zone_score(
     if cl_rewards_eth < 0.0:
         return 0.0
 
-    total_rewards = cl_rewards_eth + mev_rewards_eth
+    total_rewards = cl_rewards_eth + el_activity_proxy_eth
 
     if total_rewards <= 0.0:
         # Rewards genuinamente cero con slashings: peor escenario posible
