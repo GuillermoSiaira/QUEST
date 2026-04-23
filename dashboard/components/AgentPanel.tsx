@@ -129,18 +129,20 @@ function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
   const currentExposure = computeAgentState(Math.min(1, gzs), lambda).exposureRatio * 100;
   const currentGzs = Math.min(1, Math.max(0, gzs));
 
+  const nowLabel = `Now: ${currentExposure.toFixed(0)}%`;
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-between items-baseline">
         <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">
-          Exposure Curve
+          LST Allocation vs Macro Risk
         </span>
         <span className="text-[10px] text-zinc-400 dark:text-zinc-600">
-          f(GZS) = max(0, 1 − exp(k·GZS − k))
+          % portfolio in LSTs · shrinks as GZS rises
         </span>
       </div>
-      <ResponsiveContainer width="100%" height={110}>
-        <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={120}>
+        <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 14 }}>
           <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
           <XAxis
             dataKey="gzs"
@@ -150,6 +152,7 @@ function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
             tick={{ fontSize: 9, fill: "#71717a" }}
             tickLine={false}
             axisLine={false}
+            label={{ value: "Grey Zone Score →", position: "insideBottomRight", offset: -4, fontSize: 9, fill: "#52525b" }}
           />
           <YAxis
             domain={[0, 100]}
@@ -167,14 +170,14 @@ function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
               background: "#18181b",
               color: "#e4e4e7",
             }}
-            formatter={(v) => [`${(Number(v) || 0).toFixed(1)}%`, "Exposure"]}
+            formatter={(v) => [`${(Number(v) || 0).toFixed(1)}%`, "LST Allocation"]}
             labelFormatter={(l) => `GZS = ${Number(l).toFixed(3)}`}
           />
           <ReferenceLine
             x={0.5}
             stroke="#f59e0b"
             strokeDasharray="3 2"
-            label={{ value: "Grey Zone", fontSize: 8, fill: "#f59e0b", position: "insideTopRight" }}
+            label={{ value: "threshold", fontSize: 8, fill: "#f59e0b", position: "insideTopRight" }}
           />
           <Line
             type="monotone"
@@ -191,6 +194,7 @@ function ExposureCurve({ gzs, lambda }: { gzs: number; lambda: number }) {
             fill="#10b981"
             stroke="#fff"
             strokeWidth={1.5}
+            label={{ value: nowLabel, position: "top", fontSize: 9, fill: "#10b981" }}
           />
         </LineChart>
       </ResponsiveContainer>
