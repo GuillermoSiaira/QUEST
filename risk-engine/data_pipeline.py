@@ -144,14 +144,16 @@ class BeaconAPIClient:
     ) -> int:
         """
         Suma de balances de todos los validadores al inicio del epoch.
-        Endpoint compacto: solo {index, balance} por validador (~10-15 MB).
-        Cacheado por epoch — descarga ocurre una vez por epoch (~6.4 min).
+        Lee la respuesta como bytes + regex para evitar los ~350 MB de heap
+        que genera resp.json() al construir 2.2M dicts Python.
+
+        Side-effect: actualiza _stats_cache con el count derivado del mismo
+        response, eliminando la necesidad de get_validator_stats HTTP call.
+        Pre-Electra: effective_balance == 32 ETH exacto → eligible = count × 32e9.
         """
         if epoch in self._balance_cache:
             return self._balance_cache[epoch]
 
-        # Usar "head" en lugar de slot numérico — siempre disponible aunque el
-        # slot del inicio del epoch haya sido missed (sin bloque).
         url = f"{self.base_url}/eth/v1/beacon/states/head/validator_balances"
 
         try:
@@ -164,17 +166,33 @@ class BeaconAPIClient:
                     )
                     return self._balance_cache.get(epoch - 1, 0)
                 resp.raise_for_status()
-                # Parsear como texto + regex para evitar construir 2.2M dicts Python
-                # (~350 MB de heap) — el string de 15 MB es suficiente para sumar.
-                text = await resp.text()
+                content = await resp.read()   # bytes directos — evita doble copia text+encode
 
-            total = sum(int(m) for m in re.findall(rb'"balance":"(\d+)"', text.encode()))
+            total = 0
+            count = 0
+            for m in re.finditer(rb'"balance":"(\d+)"', content):
+                b = int(m.group(1))
+                total += b
+                if b > 0:   # excluir validadores totalmente retirados (balance=0)
+                    count += 1
+
             self._balance_cache[epoch] = total
+
+            # Actualizar stats desde este response — elimina la query de 450 MB
+            if count > 0:
+                self._stats_cache = {
+                    "count":                 count,
+                    "eligible_balance_gwei": count * 32 * 10**9,
+                }
+                self._stats_cache_epoch = epoch
 
             for old in [e for e in list(self._balance_cache) if e < epoch - 5]:
                 del self._balance_cache[old]
 
-            logger.info("validator_balances epoch %d: total=%.2f M ETH", epoch, total / 1e18)
+            logger.info(
+                "validator_balances epoch %d: %.2f M ETH, %d validators",
+                epoch, total / 1e15, count,
+            )
             return total
 
         except asyncio.TimeoutError:
@@ -185,49 +203,14 @@ class BeaconAPIClient:
         self, session: aiohttp.ClientSession, epoch: int
     ) -> dict:
         """
-        Count de validadores activos y eligible balance (sum effective_balance).
-        Request pesado (~50 MB) cacheado 50 epochs (~5.3 hs).
-        Fallback: baseline mainnet si el request falla antes del primer cache.
+        Count de validadores y eligible balance.
+        Derivado del response de get_total_balance_gwei (mismo ciclo) —
+        NO hace HTTP call propio para evitar cargar 450 MB de JSON.
         """
-        if self._stats_cache and (epoch - self._stats_cache_epoch) < 50:
+        if self._stats_cache:
             return self._stats_cache
-
-        # "finalized" es la última epoch finalizada — siempre disponible y estable.
-        url = (
-            f"{self.base_url}/eth/v1/beacon/states/finalized"
-            "/validators?status=active_ongoing"
-        )
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=240, connect=15)
-            async with session.get(url, timeout=timeout) as resp:
-                if resp.status in (404, 503):
-                    return self._stats_cache or {
-                        "count":                 _BASELINE_VALIDATOR_COUNT,
-                        "eligible_balance_gwei": _BASELINE_ELIGIBLE_ETH_GWEI,
-                    }
-                resp.raise_for_status()
-                # Contar ocurrencias de "active_ongoing" en texto plano —
-                # evita parsear ~50 MB de JSON en dicts Python.
-                # Pre-Electra: effective_balance = 32 ETH exacto para todos.
-                text = await resp.text()
-
-            count = text.count('"active_ongoing"')
-            self._stats_cache = {
-                "count":                 count,
-                "eligible_balance_gwei": count * 32 * 10**9,
-            }
-            self._stats_cache_epoch = epoch
-            logger.info(
-                "Validator stats actualizados: %d activos, %.0f M ETH elegible",
-                count,
-                count * 32 / 1000,
-            )
-
-        except asyncio.TimeoutError:
-            logger.warning("Timeout en get_validator_stats epoch %d — usando cache", epoch)
-
-        return self._stats_cache or {
+        # Fallback hasta que el primer validator_balances complete
+        return {
             "count":                 _BASELINE_VALIDATOR_COUNT,
             "eligible_balance_gwei": _BASELINE_ELIGIBLE_ETH_GWEI,
         }
