@@ -21,6 +21,12 @@ Infraestructura de señal para coordinación de agentes autónomos en DeFi. Publ
 
 ---
 
+## Plan de investigación activo
+
+→ [[research_plan]] — **"Homo Silicus in the Market"** — Aggregate Rationality in Multi-Agent AI Systems. Estado del arte, hipótesis, bibliografía, plan de trabajo 6 meses.
+
+---
+
 ## ⚡ Los 3 Programas (desarrollo activo)
 
 El paper de ethresear.ch establece el framework. Los **3 programas** lo convierten en producto, infraestructura y agenda académica.
