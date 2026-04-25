@@ -2,14 +2,14 @@
 name: 00_index
 description: Mapa central del vault — índice navegable de todos los nodos de QUEST
 tipo: index
-version: 2026-04-24
+version: 2026-04-25
 estado: activo
 tags: [index, mapa, navegacion]
 ---
 
 # QUEST — Knowledge Vault
 
-Oracle macroprudencial para el Consensus Layer de Ethereum. Publica el **Grey Zone Score** cada epoch (~384s) y propone un framework de utilidad para que agentes DeFi coordinen riesgo sistémico sin coerción.
+Infraestructura de señal para coordinación de agentes autónomos en DeFi. Publica el **Grey Zone Score** cada epoch (~384s) como señal pública para que agentes con λ heterogéneo coordinen exposición sin coerción — tesis: la heterogeneidad de aversión al riesgo es una condición de estabilidad sistémica.
 
 **Repo**: `D:\projects\QUEST` · **API**: `quest-api-oo2ixbxsba-uc.a.run.app` · **Dashboard**: `quest-orcin-sigma.vercel.app`
 
@@ -71,6 +71,8 @@ El paper de ethresear.ch establece el framework. Los **3 programas** lo conviert
 | [[architecture]] | Stack técnico: risk-engine → API → AVS → contratos Sepolia |
 | [[contracts]] | QUESTCore.sol, QUESTAwareProtocol.sol, QUESTAgent.sol — addresses y ABIs |
 | [[pmc_signal]] | Vector PMC 5D: θ_risk, θ_gas, θ_latency, θ_finality, θ_incentives |
+| [[dune_query]] | **⭐ SIGUIENTE PASO**: SQL para estimar λ̂ por wallet on-chain — desbloquea Paper 2 |
+| [[historical_dataset]] | Fuentes Xatu/DuckDB para backtest del consensus layer (completado) |
 
 ---
 
