@@ -1,0 +1,219 @@
+{
+  "main": {
+    "id": "9587ae9843a0dcd8",
+    "type": "split",
+    "children": [
+      {
+        "id": "b8c928406244f251",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "75dd7f50229e16e7",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "06_open_questions/open_questions.md",
+                "mode": "preview",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "open_questions"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "3693d0dfc5902adb",
+    "type": "split",
+    "children": [
+      {
+        "id": "b93cbb30da542347",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "4d88d6e031cbe8ad",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de archivos"
+            }
+          },
+          {
+            "id": "677c9ef1db049718",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "tag:#AI-agentes",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Buscar"
+            }
+          },
+          {
+            "id": "6a7d45502510cc2c",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "right": {
+    "id": "5625ac93ff8aafcf",
+    "type": "split",
+    "children": [
+      {
+        "id": "0144784434646749",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "38712ef1ebc91a82",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "06_open_questions/open_questions.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Enlaces entrantes de open_questions"
+            }
+          },
+          {
+            "id": "e4927f162e16e800",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "06_open_questions/open_questions.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Enlaces salientes de open_questions"
+            }
+          },
+          {
+            "id": "1bed9a0d22101c2f",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "0f27d45847ef963c",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas las propiedades"
+            }
+          },
+          {
+            "id": "2a84a773a18ca0c5",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "06_open_questions/open_questions.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Esquema de open_questions"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir selector rápido": false,
+      "graph:Abrir vista gráfica": false,
+      "canvas:Crear nuevo lienzo": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Crear nueva base": false
+    }
+  },
+  "active": "75dd7f50229e16e7",
+  "lastOpenFiles": [
+    "01_signal/grey_zone_score.md",
+    "07_literatura/ai_agents_2026.md",
+    "07_literatura/gogol_sok_2024.md",
+    "program_economic.md",
+    "06_open_questions/open_questions.md",
+    "04_implementation/historical_dataset.md",
+    "00_index.md.tmp.16300.1777067726709",
+    "07_literatura/research_strategy.md",
+    "07_literatura/positioning_table.md",
+    "07_literatura/positioning_table.md.tmp.16300.1777067664389",
+    "07_literatura/lido_v3_2025.md",
+    "07_literatura/lido_v3_2025.md.tmp.16300.1777067616480",
+    "07_literatura/systemic_risk_review_2025.md",
+    "07_literatura/systemic_risk_review_2025.md.tmp.16300.1777067600209",
+    "07_literatura/ai_agents_2026.md.tmp.16300.1777067585727",
+    "07_literatura/he_leverage_2024.md",
+    "07_literatura/he_leverage_2024.md.tmp.16300.1777067567518",
+    "07_literatura/tzinas_zindros_2024.md",
+    "07_literatura/gogol_sok_2024.md.tmp.16300.1777067529587",
+    "07_literatura/gogol_empirical_2024.md",
+    "07_literatura/scharnowski_2025.md",
+    "07_literatura/scharnowski_2025.md.tmp.16300.1777067497578",
+    "07_literatura",
+    "program_technical.md.tmp.15668.1777055168477",
+    "04_implementation/contracts.md",
+    "program_research.md",
+    "program_technical.md",
+    "02_framework/utility_api.md",
+    "02_framework/exposure_ratio.md",
+    "02_framework/utility_function.md"
+  ]
+}
