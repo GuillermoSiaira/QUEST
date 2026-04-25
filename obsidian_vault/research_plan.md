@@ -253,15 +253,16 @@ Output: §5 del paper (implicaciones de diseño) + propuesta de implementación
 - Milgrom, P. & Wilson, R. (1982). "A Theory of Auctions and Competitive Bidding." *Econometrica*
 
 ### LLMs como agentes económicos
-- Horton, J. (2023). "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" NBER WP 31122
-- Aher, G. et al. (2023). "Using Large Language Models to Simulate Multiple Humans." *ICML 2023*
-- Mei, Q. et al. (2024). "LLMs as Economic Agents: Survey, Framework, Empirical Analysis." arXiv:2406.xxxxx
-- Chen, B. et al. (2023). "Can LLM Already Serve as Foundation for Agent-Oriented Programming?" arXiv
+- Horton, J.J., Filippas, A. & Manning, B.S. (2023). "Large Language Models as Simulated Economic Agents: What Can We Learn from Homo Silicus?" NBER WP 31122. arXiv:2301.07543 → [[horton_homo_silicus_2023]]
+- Aher, G., Arriaga, R.I. & Kalai, A.T. (2023). "Using Large Language Models to Simulate Multiple Humans and Replicate Human Subject Studies." *ICML 2023*. arXiv:2208.10264 → [[aher_turing_2023]]
+- Li, N. et al. (2024). "EconAgent: Large Language Model-Empowered Agents for Simulating Macroeconomic Activities." *ACL 2024*. arXiv:2310.10436 → [[econagent_2024]]
+- Tak, A.N. et al. (2026). "Sparks of Rationality: Do Reasoning LLMs Align with Human Judgment and Choice?" arXiv:2601.22329 → [[sparks_rationality_2026]]
+- Jiang, B. et al. (2025). "Towards Rationality in Language and Multimodal Agents: A Survey." *NAACL 2025*. arXiv:2406.00252 → [[rationality_survey_naacl_2025]]
 
 ### Riesgo sistémico y agentes AI
-- arxiv 2603.13942 (2026). "Correlated AI Agents Amplify Instability in Financial Markets"
-- Acemoglu, D. (2024). Trabajo sobre AI, instituciones y mercados laborales
-- Scharnowski, S. (2025). "LST Economics and Systemic Risk." *JFM*
+- Gong, H. (2026). "AI Agents in Financial Markets: Architecture, Applications, and Systemic Implications." arXiv:2603.13942 → [[ai_agents_financial_markets_2026]]
+- Saxena, M., Pangallo, M., Caccioli, F. & del Rio-Chanona, R.M. (2026). "Machine Spirits: Speculation and Adaptation of LLM Agents in Asset Markets." arXiv:2604.18602 → [[machine_spirits_2026]]
+- Scharnowski, S. (2025). "LST Economics and Systemic Risk." *JFM* → [[scharnowski_2025]]
 
 ### Infraestructura de agentes en Ethereum
 - Olas Network (2024). Technical documentation. *autonolas.network*
@@ -320,9 +321,16 @@ Eso es una contribución de investigación de protocolo, no solo de DeFi.
 
 → [[00_index]] — índice general
 → [[07_literatura/positioning_table]] — tabla comparativa con literatura existente
-→ [[07_literatura/ai_agents_2026]] — arxiv 2603 (la crítica a responder)
-→ [[agents/simulate_coordination.py]] — simulación del mecanismo
-→ [[04_implementation/dune_query]] — datos empíricos
+→ [[smd_theorem]] — fundamento teórico central
+→ [[morris_shin_2002]] — H3 (σ*) y diseño de señal pública
+→ [[horton_homo_silicus_2023]] — Homo Silicus; WARP individual
+→ [[aher_turing_2023]] — hyper-accuracy distortion; diversidad poblacional
+→ [[ai_agents_financial_markets_2026]] — gap explícito sobre heterogeneidad óptima
+→ [[machine_spirits_2026]] — evidencia empírica de inestabilidad endógena
+→ [[econagent_2024]] — metodología de simulación (Fase 3)
+→ [[sparks_rationality_2026]] — trade-off racionalidad/manipulabilidad
+→ [[rationality_survey_naacl_2025]] — estado del arte que QUEST contradice
+→ [[04_implementation/dune_query]] — datos empíricos (Fase 2)
 
 ---
 

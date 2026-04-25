@@ -101,10 +101,31 @@ El paper de ethresear.ch establece el framework. Los **3 programas** lo conviert
 
 ## 07 — Literatura & Posicionamiento
 
+### Estrategia & Posicionamiento
+
 | Documento | Descripción |
 |-----------|-------------|
 | [[positioning_table]] | **⭐ Tabla comparativa**: 8 papers vs. QUEST — qué identifican, qué proponen, qué gap QUEST llena |
 | [[research_strategy]] | **⭐ Estrategia**: 3 papers en secuencia, cómo se citan, argumentos por grant, respuesta al backtest |
+
+### Racionalidad Agregada en AI (Programa de investigación nuevo)
+
+| Documento | Descripción |
+|-----------|-------------|
+| [[smd_theorem]] | SMD (Sonnenschein-Mantel-Debreu 1973-74) — racionalidad individual ≠ racionalidad agregada; fundamento teórico |
+| [[morris_shin_2002]] | Morris & Shin (AER 2002) — señales públicas precisas desestabilizan; umbral σ*; diseño de GZS |
+| [[horton_homo_silicus_2023]] | Horton et al. (2023, arXiv:2301.07543) — "Homo Silicus"; LLMs satisfacen WARP individualmente |
+| [[aher_turing_2023]] | Aher et al. (ICML 2023, arXiv:2208.10264) — hyper-accuracy distortion; LLMs menos diversos que humanos |
+| [[econagent_2024]] | Li et al. (ACL 2024, arXiv:2310.10436) — LLMs reproducen Phillips Curve y Ley de Okun |
+| [[sparks_rationality_2026]] | Tak et al. (2026, arXiv:2601.22329) — reasoning mejora racionalidad individual pero amplifica steering afectivo |
+| [[rationality_survey_naacl_2025]] | Jiang et al. (NAACL 2025, arXiv:2406.00252) — survey racionalidad en LLM agents; gap agregado no abordado |
+| [[ai_agents_financial_markets_2026]] | Gong (2026, arXiv:2603.13942) — AFMM; homogeneidad = vulnerabilidad; gap explícito sobre heterogeneidad óptima |
+| [[machine_spirits_2026]] | Saxena et al. (2026, arXiv:2604.18602) — 15 LLMs en mercados; inestabilidad endógena con heterogeneidad |
+
+### LST / Staking (Paper 1 / fundamentos GZS)
+
+| Documento | Descripción |
+|-----------|-------------|
 | [[scharnowski_2025]] | Scharnowski (JFM 2025) — LST economics, basis, mayo 2022 como evento sistémico |
 | [[gogol_empirical_2024]] | Gogol et al. (2401.16353) — taxonomía LST: rebase/reward/dual; peg stability |
 | [[gogol_sok_2024]] | Gogol SoK (2404.00644) — framework unificado LSTs + restaking; slashing en pools |
