@@ -548,7 +548,11 @@ async def main_async(args):
                 print(f"    {d}: stETH/ETH = {p:.6f}{depeg}")
 
         # Step 2: Top holders
-        if args.skip_scan and holders_cache.exists():
+        if args.holders_file:
+            print(f"\n[2/4] Loading holders from --holders-file ({args.holders_file})...")
+            with open(args.holders_file) as f:
+                top_holders = json.load(f)
+        elif args.skip_scan and holders_cache.exists():
             print(f"\n[2/4] Loading holders from cache ({holders_cache})...")
             with open(holders_cache) as f:
                 top_holders = json.load(f)
@@ -609,6 +613,8 @@ def main():
                    help="End period YYYY-MM (default: 2023-06)")
     p.add_argument("--skip-scan",  action="store_true",
                    help="Skip Transfer scan, load from top_holders.json cache")
+    p.add_argument("--holders-file", default=None,
+                   help="JSON file with list of wallet addresses to track (e.g. olas_wallets.json)")
     p.add_argument("--no-plot",    action="store_true")
     args = p.parse_args()
     asyncio.run(main_async(args))
