@@ -21,6 +21,12 @@ Infraestructura de señal para coordinación de agentes autónomos en DeFi. Publ
 
 ---
 
+## 🟢🔴 Estado actual (2026-04-29)
+
+→ Ver [[project_status]] — qué líneas están vivas, cuáles desactivadas, qué infra queda en hold.
+
+---
+
 ## Plan de investigación activo
 
 → [[research_plan]] — **"Homo Silicus in the Market"** — Aggregate Rationality in Multi-Agent AI Systems. Estado del arte, hipótesis, bibliografía, plan de trabajo 6 meses.
