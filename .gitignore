@@ -54,3 +54,12 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Obsidian — vault config noise
+# Trackeamos: app.json, appearance.json, core-plugins.json, community-plugins.json, graph.json, templates/
+# Ignoramos: workspace state (cambia al abrir Obsidian) y binarios de plugins
+obsidian_vault/.obsidian/workspace.json
+obsidian_vault/.obsidian/workspace-mobile.json
+obsidian_vault/.obsidian/plugins/
+obsidian_vault/.obsidian/cache
+obsidian_vault/.obsidian/hotkeys.json

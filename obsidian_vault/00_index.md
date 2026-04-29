@@ -88,6 +88,7 @@ El paper de ethresear.ch establece el framework. Los **3 programas** lo conviert
 |-----------|-------------|
 | [[ethresear_v2]] | **Draft completo** — "Macroprudential Signals for Autonomous Agents" |
 | [[grant_roadmap]] | Estado de las 4 aplicaciones enviadas + pendientes |
+| [[feedback_received]] | **Registro de feedback** — EF/Boris, Lido bug bounty + plan de respuesta |
 
 ---
 
