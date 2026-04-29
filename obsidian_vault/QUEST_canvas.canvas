@@ -1,0 +1,149 @@
+{
+  "nodes": [
+    {
+      "id": "problem",
+      "type": "text",
+      "x": -800,
+      "y": -100,
+      "width": 340,
+      "height": 180,
+      "text": "## El Problema\nAgentes DeFi optimizan localmente.\nRiesgo sistémico se acumula sin señal.\nGovernanza es lenta. Coerción imposible.\n\n→ [[coordination_result|¿Cómo coordinar sin enforcement?]]"
+    },
+    {
+      "id": "lido",
+      "type": "text",
+      "x": -800,
+      "y": 160,
+      "width": 340,
+      "height": 180,
+      "text": "## Caso Motivador\n`safe_border.py` de Lido\n\nEarly-return cuando CL rebase > 0.\nOmite verificar slashing debt.\nEl oracle ve salud. La deuda es real.\n\n→ [[safe_border_gap]]"
+    },
+    {
+      "id": "gzs",
+      "type": "text",
+      "x": -320,
+      "y": 30,
+      "width": 340,
+      "height": 220,
+      "text": "## Grey Zone Score\n$$\\text{GZS} = \\frac{L_s}{R_{cl} + R_{el}}$$\n\n| < 0.5 | HEALTHY |\n| 0.5–1.0 | GREY_ZONE |\n| ≥ 1.0 | CRITICAL |\n\nPublicado cada epoch (~384s)\n→ [[grey_zone_score]]"
+    },
+    {
+      "id": "utility",
+      "type": "text",
+      "x": 160,
+      "y": -60,
+      "width": 360,
+      "height": 220,
+      "text": "## Framework de Utilidad\n$$U = E(R) - \\frac{\\lambda}{2}\\sigma_{base}^2 e^{k \\cdot GZS}$$\n\nVarianza sistémica = exponencial en GZS.\nNo constante. No histórica.\nForward-looking, epoch-sincronizada.\n\n→ [[utility_function]]"
+    },
+    {
+      "id": "exposure",
+      "type": "text",
+      "x": 160,
+      "y": 220,
+      "width": 360,
+      "height": 200,
+      "text": "## Ratio de Exposición\n$$\\alpha = \\max\\left(0,\\ 1 - \\frac{\\lambda \\sigma^2}{2 E(R)}\\right)$$\n\n| GZS 0.0 → 90% |\n| GZS 0.5 → 68% |\n| GZS 0.7 → 50% |\n| GZS 1.0 → 0% |\n\n→ [[exposure_ratio]]"
+    },
+    {
+      "id": "nash",
+      "type": "text",
+      "x": 660,
+      "y": 30,
+      "width": 360,
+      "height": 240,
+      "text": "## Resultado de Coordinación\n\n`reduce` es estrategia dominante cuando GZS > umbral.\n\n**Nash**: (reduce, reduce) es el único equilibrio de 2 agentes.\n\nNo se necesita:\n- Governance vote\n- Comunicación\n- Enforcement\n\n→ [[coordination_result]]"
+    },
+    {
+      "id": "freerider",
+      "type": "text",
+      "x": 660,
+      "y": 340,
+      "width": 360,
+      "height": 160,
+      "text": "## Inversión Free-Rider\nEn TradFi: reducir es costoso individualmente → inacción colectiva.\n\nCon QUEST: reducir es la estrategia dominante → coordinación como subproducto.\n\n→ [[free_rider_inversion]]"
+    },
+    {
+      "id": "impl",
+      "type": "text",
+      "x": -320,
+      "y": 340,
+      "width": 340,
+      "height": 180,
+      "text": "## Implementación v1\nPython risk-engine → FastAPI → GCP\nQUESTCore.sol (Sepolia)\nQUESTAgent.sol (PRBMath exp)\n1,200+ epochs capturados\n\n→ [[architecture]] · [[contracts]]"
+    },
+    {
+      "id": "paper",
+      "type": "text",
+      "x": 160,
+      "y": 500,
+      "width": 360,
+      "height": 140,
+      "text": "## Paper ethresear.ch\n*\"Macroprudential Signals for Autonomous Agents\"*\n\nEstado: **listo para publicar**\n\n→ [[ethresear_v2]]"
+    },
+    {
+      "id": "questions",
+      "type": "text",
+      "x": 660,
+      "y": 560,
+      "width": 360,
+      "height": 160,
+      "text": "## Preguntas Abiertas\n1. ¿GZS agregado o per-protocol?\n2. Calibración de λ distribution\n3. Proxy R_el → MEV real\n4. Validación histórica de umbrales\n5. Dinámica de salida epoch-sync\n\n→ [[open_questions]]"
+    },
+    {
+      "id": "divider",
+      "type": "text",
+      "x": -800,
+      "y": 780,
+      "width": 1820,
+      "height": 60,
+      "text": "# ⚡ Fase 2 — Los 3 Programas (desarrollo activo, 2026-04-24)",
+      "color": "6"
+    },
+    {
+      "id": "prog_economic",
+      "type": "text",
+      "x": -800,
+      "y": 880,
+      "width": 560,
+      "height": 360,
+      "text": "## Programa Económico 🥇\n### ¿Quién paga, qué compra, por qué?\n\n**Tesis**: QUEST vende **calibración curada + prueba de ejecución**, no la fórmula.\n\n**Cliente v1 candidatos**:\n- A) Fondos DeFi cuantitativos\n- B) AVS operators EigenLayer ⭐\n- C) Protocolos LST-aware\n\n**Gap crítico**: el mecanismo de adopción — por qué el primer adoptante gana.\n\n**Mejor argumento**: Sharpe ratio superior en eventos de estrés (empírico, no depende de network effect).\n\n→ [[program_economic]]",
+      "color": "4"
+    },
+    {
+      "id": "prog_technical",
+      "type": "text",
+      "x": -200,
+      "y": 880,
+      "width": 560,
+      "height": 360,
+      "text": "## Programa Técnico 🛠\n### ¿Qué construimos?\n\n**4 capas target**:\n1. GZS engine (existe ✅)\n2. API de utilidad (nuevo)\n3. Librería de calibraciones curadas\n4. Certificación de ejecución (AVS/ZK/attestation)\n\n**Decisión crítica**: para v1, **attestation firmada + challenge period**. Migrar a AVS en 6 meses.\n\n**Gap crítico**: dataset histórico para backtest.\n\n→ [[program_technical]]",
+      "color": "5"
+    },
+    {
+      "id": "prog_research",
+      "type": "text",
+      "x": 400,
+      "y": 880,
+      "width": 560,
+      "height": 360,
+      "text": "## Programa de Investigación 📚\n### ¿Qué publicamos?\n\n**4 papers en agenda**:\n1. El fundacional (ethresear.ch) — escrito ✅\n2. El axiomático — Debreu + Hansen/Sargent\n3. El empírico — backtest histórico\n4. El mecanismo — ZK/AVS de ejecución\n\n**Gap crítico**: lectura académica seria. Colaborador institucional.\n\n**Regla**: Paper 1 primero. Los otros son consecuencia.\n\n→ [[program_research]]",
+      "color": "2"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "fromNode": "problem", "fromSide": "right", "toNode": "gzs", "toSide": "left", "label": "necesita señal" },
+    { "id": "e2", "fromNode": "lido", "fromSide": "right", "toNode": "gzs", "toSide": "left", "label": "motiva" },
+    { "id": "e3", "fromNode": "gzs", "fromSide": "right", "toNode": "utility", "toSide": "left", "label": "σ²(GZS)" },
+    { "id": "e4", "fromNode": "utility", "fromSide": "bottom", "toNode": "exposure", "toSide": "top", "label": "maximizar U → α" },
+    { "id": "e5", "fromNode": "utility", "fromSide": "right", "toNode": "nash", "toSide": "left", "label": "dominancia" },
+    { "id": "e6", "fromNode": "nash", "fromSide": "bottom", "toNode": "freerider", "toSide": "top", "label": "implica" },
+    { "id": "e7", "fromNode": "gzs", "fromSide": "bottom", "toNode": "impl", "toSide": "top", "label": "producido por" },
+    { "id": "e8", "fromNode": "exposure", "fromSide": "bottom", "toNode": "paper", "toSide": "top", "label": "resumido en" },
+    { "id": "e9", "fromNode": "freerider", "fromSide": "bottom", "toNode": "questions", "toSide": "top", "label": "abre" },
+    { "id": "e10", "fromNode": "paper", "fromSide": "bottom", "toNode": "divider", "toSide": "top", "label": "siguiente fase" },
+    { "id": "e11", "fromNode": "prog_economic", "fromSide": "right", "toNode": "prog_technical", "toSide": "left", "label": "define qué construir" },
+    { "id": "e12", "fromNode": "prog_technical", "fromSide": "right", "toNode": "prog_research", "toSide": "left", "label": "habilita datos empíricos" },
+    { "id": "e13", "fromNode": "prog_research", "fromSide": "top", "toNode": "prog_economic", "toSide": "bottom", "label": "valida cliente" }
+  ]
+}
