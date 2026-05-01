@@ -63,3 +63,5 @@ obsidian_vault/.obsidian/workspace-mobile.json
 obsidian_vault/.obsidian/plugins/
 obsidian_vault/.obsidian/cache
 obsidian_vault/.obsidian/hotkeys.json
+babel/data/raw/
+babel/data/embeddings/
